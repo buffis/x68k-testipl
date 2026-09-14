@@ -143,6 +143,11 @@ below is the short version.
 from MAME, with the evidence for each and an explicit list of things that turned
 out to be our bugs rather than the emulator's.
 
+`docs/REVERSE-ENGINEERING.md` describes the tools this was worked out with —
+capstone for static disassembly, and MAME's Lua read/write taps for the
+ordering questions a disassembler cannot answer — with the trace scripts in
+`test/` indexed by the question each one answers.
+
 `docs/BOOT-SEQUENCE.md` collects what the IPL and IOCS actually initialise, and
 what they do not — written up because this POST runs *before* the IPL and kept
 tripping over state nothing had set up yet. It also records the hardware
