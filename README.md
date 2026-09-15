@@ -284,42 +284,36 @@ fitted but broken still answers the bus cycle and fails on its data instead.
 > [Running the tests](#running-the-tests) — they are not, and cannot be,
 > included here.
 
-One-time setup (needs the ROMs already built in `build*/`; no assembler needed
-just to run them):
+`test/run-mame.sh` stages a rompath with the POST image swapped in and launches
+MAME on it, so there is nothing to set up first:
 
 ```bash
-./mkroms.sh          # builds mame-roms/ with the POST images swapped in
+cd test
+./run-mame.sh            # watch the standalone build in a window
+./run-mame.sh exbios     # watch an injected build boot through to the IPL
+./run-mame.sh screen     # print the result screen as text, no window
+./run-mame.sh serial     # print the bytes sent to the RS-232C port
+RAM=12m ./run-mame.sh    # a different memory fit (lowercase: -ram 12m)
 ```
 
-Then, from the repository root:
+The POST halts with the results on screen, so there is no rush to read them. To
+watch the tests go by rather than see only the end state, pass MAME's `-speed`
+through by running it directly against the rompath the script staged:
 
 ```bash
-mame x68kxvi -rompath ./mame-roms -bios ipl12 -window -skip_gameinfo
+mame x68kxvi -rompath ./roms -bios ipl12 -window -skip_gameinfo -speed 0.25
 ```
 
-The POST runs and then halts with the results on screen, so there is no rush to
-read them. To watch the tests go by rather than see only the end state, slow the
-whole machine down:
+That form is also how you pick a different model. One image serves all of them —
+only the filename MAME expects and the `-bios` differ, which is what `tryall.sh`
+automates:
 
-```bash
-mame x68kxvi -rompath ./mame-roms -bios ipl12 -window -skip_gameinfo -speed 0.25
-```
-
-Or dump the result screen as text without opening a window at all:
-
-```bash
-mame x68kxvi -rompath ./mame-roms -bios ipl12 -video none -sound none -nothrottle \
-     -seconds_to_run 30 -autoboot_script test/screen.lua -autoboot_delay 0
-```
-
-The machine and BIOS to use for each model:
-
-| model | command |
+| model | machine and BIOS |
 |---|---|
-| Compact | `mame x68kxvi -rompath ./mame-roms -bios ipl12 ...` |
-| SUPER / XVI | `mame x68kxvi -rompath ./mame-roms -bios ipl11 ...` |
-| ACE / PRO / EXPERT | `mame x68000 -rompath ./mame-roms -bios ipl10 ...` |
-| X68030 | `mame x68030 -rompath ./mame-roms -bios ipl13 ...` |
+| Compact | `mame x68kxvi -bios ipl12` |
+| SUPER / XVI | `mame x68kxvi -bios ipl11` |
+| ACE / PRO / EXPERT | `mame x68000 -bios ipl10` |
+| X68030 | `mame x68030 -bios ipl13` |
 
 Add `-ram 1m` / `2m` / `4m` / `12m` to test a different memory fit. RAM is a slot
 device in current MAME, so it is `-ram 4m`, not the older `-ramsize 4M`.

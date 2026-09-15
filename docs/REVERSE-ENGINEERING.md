@@ -118,39 +118,35 @@ Run one against a stock boot with:
 
 ```bash
 mame x68000 -rompath ./roms -bios ipl10 -video none -sound none -nothrottle \
-     -seconds_to_run 20 -autoboot_script test/vectap.lua -autoboot_delay 0
+     -seconds_to_run 20 -autoboot_script probe.lua -autoboot_delay 0
 ```
 
-### The instruments
+### What this answered
 
-Each script in `test/` answers exactly one question. They are kept rather than
-deleted because the answers are only as good as the question, and it is worth
-being able to re-ask one.
+The probes themselves were one-off instruments and have been removed now that
+the questions are settled, but the questions are worth recording, because they
+are the ones a pre-IPL program has to ask:
 
-| script | question it answers |
-|---|---|
-| `resettrace.lua` | where the 68000 actually fetches its reset vector |
-| `vectap.lua` | whether the stock IPL installs its own bus/address error vectors, and when |
-| `areaset.lua` | whether the IPL writes `$E86001`, and at what point in the sequence |
-| `sysinit.lua` | what the IPL writes to the memory controller and system port, relative to first touching main RAM |
-| `exbtrace.lua` | every hardware write exbios makes from reset, in order |
-| `exbdeep.lua` | whether exbios ever touches AREASET, sprite RAM or the DMAC |
-| `exbram.lua` | exbios's longest run of consecutive main-RAM writes |
-| `allregs.lua` | every distinct hardware address exbios writes during a full boot, with first value and PC — a systematic sweep for "is there anything we are missing" |
-| `earlyall.lua` | everything exbios writes from reset, anywhere, with ascending runs collapsed into one line |
-| `mfptrace.lua` | which MFP registers exbios programs, and when |
-| `iocsvec.lua` | IOCS call vectors, read out of `$000400` on a booted machine |
-| `sprwrites.lua` | every write the stock IPL makes to the sprite/BG controller (several read back `$FF`, so post-boot state is not enough) |
-| `sprregs.lua` | what the stock IPL *leaves* in the sprite controller after boot |
-| `sprorder.lua` | what the IPL does, in order, before it first touches sprite RAM |
-| `rtcprobe.lua` | whether MAME's RP5C15 actually ticks during a run |
+- Where does the 68000 actually fetch its reset vector?
+- Does the stock IPL install its own bus and address error vectors, and when?
+- Does it write the supervisor area register at `$E86001`, and at what point in
+  the sequence relative to first touching main RAM?
+- Which hardware addresses does a known-good IPL write during a full boot, with
+  what first value, and in what order?
+- Which MFP registers get programmed, and when?
+- What does the IPL leave in the sprite/BG controller — and what does it write
+  on the way there? (Several of those registers read back `$FF`, so the state
+  after boot does not tell you what was programmed.)
+
+Writing one script per question, rather than one general tracer, is what made
+the answers legible. `BOOT-SEQUENCE.md` is the accumulated result.
 
 ### The technique worth stealing
 
-`iocsvec.lua`. Rather than disassembling the IPL to find a routine, **boot the
-machine and read the live vector table.** IOCS keeps one longword per call
-number at `$000400`, so call `$C0` (`_SP_INIT`) is simply the longword at
-`$000400 + 0xC0*4`, and it hands you the entry address directly.
+**Boot the machine and read the live vector table**, rather than disassembling
+the IPL to find a routine. IOCS keeps one longword per call number at `$000400`,
+so call `$C0` (`_SP_INIT`) is simply the longword at `$000400 + 0xC0*4`, and it
+hands you the entry address directly.
 
 That is how `_SP_INIT` was located at `$FFC418` in the Compact IPL — and
 disassembling from there showed it opens with a guard that reads CRTC R20, masks
