@@ -43,8 +43,12 @@ mkrom roms_stock
 # Boot the stock ROM once so SRAM is initialised.  Our ROM never writes it --
 # it boots nothing -- so without this the signature check correctly reports the
 # flat-battery case and the first run would differ from the rest.
+#
+# No autoboot script: this only has to let Human68k write its signature to
+# NVRAM, and MAME persists that in nvram/ for every run after it.
 echo "(warming up SRAM with a stock boot)"
-run roms_stock 4m timing.lua 14 >/dev/null 2>&1 || true
+mame x68kxvi -rompath roms_stock -bios ipl12 -ram 4m -video none -sound none \
+  -window -nomaximize -nothrottle -seconds_to_run 14 >/dev/null 2>&1 || true
 
 echo "=== healthy machine, every RAM size ==="
 for sz in 1m 2m 4m 12m; do

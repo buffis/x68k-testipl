@@ -3,17 +3,6 @@
 Reference notes for writing code that runs *before* the IPL — which is what
 this POST does, and why it kept tripping over state nothing had set up yet.
 
-**How this was established.** Everything below is either disassembled from real
-ROM images (`iplrom.dat` IPL 1.0, `iplromco.dat` Compact IPL 1.2, and exbios
-v1.34.24) or observed live by tapping writes under MAME. Addresses are given so
-each claim can be rechecked. Where something is inferred rather than observed it
-says so.
-
-**A warning that earned its place.** MAME does not implement every register it
-maps — `areaset_w` is an empty stub — and it idealises device behaviour that
-real silicon does not provide. Several facts here are invisible under emulation
-and were only found on a real PRO. Those are marked **hardware-only**.
-
 ---
 
 ## The ROM window and reset
@@ -203,37 +192,3 @@ single word read of `$EB8000` bus-errors at R20 `$0B16` and returns data at
 Past the guard, `_SP_INIT` clears `$EB0000-$EB03FF` (sprite scroll registers),
 `$EB0800-$EB0809`, and all of `$EB8000-$EBFFFF` (PCG RAM), then loads the PCG
 palette at `$E82220`.
-
----
-
-## Hardware facts that no emulator will show you
-
-**CRTC registers are write-only.** `R00`/`R04` read back `$0000` on real
-silicon while the screen is plainly being scanned. MAME implements them as
-readable. Liveness has to come from the MFP GPIP video-timing inputs instead.
-
-**MFP GPIP bit assignments:** 0 RTC alarm, 1 EXPON, 2 power switch, 3 FM IRQ,
-**4 V-DISP**, 5 unused, 6 CIRQ (raster interrupt), **7 H-SYNC**. Bits 4 and 7
-toggle whenever the CRTC is scanning; bit 6 only once a raster line has been
-programmed, so it is no good as a liveness signal.
-
-**Undriven bits float high.** A register that does not answer reads `$FF`, and
-a 4-bit register like the RP5C15's reads its real value in the low nibble with
-`$F` in the high one. Any test that reads a value back is validated against a
-fiction under emulation, where everything returns clean defined data.
-
-**A cold start is not the same machine state as a reset-button press.** After a
-reset, low memory holds plausible leftovers and VRAM refresh has never stopped;
-from power-on, both are undefined. Code that works perfectly after a reset can
-fail every cold boot for reasons that have nothing to do with the hardware.
-
-Two rules follow, and they are enough -- no reset timing trickery is needed:
-fill **all 256** exception vectors before touching any hardware, since level 7
-is non-maskable and will vector through whatever noise low RAM holds; and do not
-put anything you depend on in memory you have not just proved, text VRAM
-included.
-
-**Text VRAM is refreshed by the display.** Until the CRTC is actually scanning,
-anything stored there decays — including any work area a pre-IPL program keeps
-in the off-screen region. Bring the display up and confirm V-DISP is toggling
-*before* relying on that memory.

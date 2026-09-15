@@ -5,11 +5,6 @@ The short version lives in the README's table; this is the long one — what is
 read or written, at which address, what a pass proves, and just as importantly
 what it does **not** prove.
 
-Several tests are shaped by behaviour that only shows on real silicon, and say so
-where it matters — a test that passes under emulation is not the same as a test
-that proves anything. `MAME-DIFFERENCES.md` has the evidence for those;
-`BOOT-SEQUENCE.md` has the pre-IPL state each test has to cope with.
-
 The report is in two groups: devices first, then memory. Memory is second on
 purpose — main RAM is by far the slowest test and the one most likely to hang a
 sick machine, so by the time it runs the whole report above it is already on
@@ -99,11 +94,6 @@ time. Every step of `wait_frames` is bounded at 200,000 spins, so a CRTC that is
 not scanning cannot hang the POST — it returns "not real time" and the test
 falls back to `delay_seconds`, and a machine in that state has already failed
 the video timing line above.
-
-**This pair is what found the real fault on the PRO this ROM was written for:**
-`RTC RP5C15 OK` with `RTC oscillator FAIL` — the chip and its bus are fine, the
-32.768 kHz crystal or the battery corrosion around it is not. Splitting one
-Splitting the RTC into two lines is what makes that distinguishable.
 
 ### `DMAC HD63450`
 
@@ -201,7 +191,7 @@ be a guess — it was the likeliest source of a false FAIL on a healthy machine.
 The value is stable for a given machine, so record it and compare against
 another of the same model.
 
-A real PRO reads `13C64BFE`, which matches the CGROM image MAME's `x68000` set
+A real X68000 PRO reads `13C64BFE`, which matches the CGROM image MAME's `x68000` set
 uses byte for byte — so that dump and that machine carry the same revision. If
 your machine reports something else, it is not necessarily a fault; record it.
 
@@ -229,7 +219,7 @@ is set by CRTC R20 bits 8-11. So the test switches R20 to `$0316` — the mode
 that maps the first 512 KB through as plain 16-bit words, no nibble packing —
 runs the fill and verify, then puts R20 back to `$0B16` for the display.
 
-### `Sprite RAM` — optional
+### `Sprite RAM`
 
 `$EB8000`-`$EBFFFF`. The same fill and verify, wrapped in two mode changes, and
 the line with the most history behind it.
@@ -248,20 +238,10 @@ timing registers in the order a stock IPL writes them — tapped from a live boo
 since they read back `$FF` and the state after boot does not tell you what was
 programmed — and then `$0000` to the control register at `$EB0808`.
 
-The `$0000` matters. That is what MTEST writes, not the `$0010` the IPL leaves
-behind. Writing `$0010` with the timing registers set still failed on a real
-PRO, and so did `$0000` without them; MTEST does both and works, on the same
-machine. Bit 4 looks like a BG enable, and a controller that is fetching from
-its own RAM is not going to let the CPU in. The stock IPL never touches sprite
-RAM during boot, so there was no enabling sequence of its own to copy.
-
 The display is garbled while this runs, because the rest of the CRTC timing
 still describes the old mode. **R20 is restored at the dispatch site, not inside
 the test** — that is the only place that survives a bus error, since a fault
 unwinds straight past the test's own cleanup.
-
-It is a `run_test_opt`, so a bus error reads SKIP; RAM that answers and gives
-back the wrong pattern still fails on its data.
 
 ### `SRAM signature` — read-only
 
@@ -334,10 +314,6 @@ Two guards:
   display probe did not rescue it. Patterning would overwrite the return
   addresses under `a7` and hang, so it says SKIP instead of self-destructing.
 
-The 2048-longword slice size only sets how precisely the on-screen address names
-a stall; it is not a hardware workaround. Smaller slices cost real time — 512
-adds about twelve seconds at 12 MB.
-
 ### `Main RAM vs SRAM` — cross-check
 
 Human68k records the memory size it last configured at `$ED0008`. This compares
@@ -347,30 +323,3 @@ missing.
 It SKIPs unless the SRAM value is plausible — non-zero, no more than 12 MB, and
 a whole number of megabytes — so an unconfigured machine is not reported as
 broken.
-
-The stock IPL rewrites this value on every boot, so **a mismatch only shows on
-the first boot after the fault appears.** Under MAME the address is faked from
-the configured RAM size rather than read from NVRAM, so there it compares
-against the emulated machine's real size.
-
----
-
-## What is not tested, and why
-
-**ADPCM MSM6258.** Removed. Its only readable register drives a couple of bits
-and leaves the rest open, so on real hardware the read returns bus float: a
-healthy PRO gave `$FF` on one boot and `$C0` on the next. The old test called
-`$FF` "absent", which made it a coin toss rather than a test. Proving this chip
-alive means commanding it and observing a state change, which is more than a
-POST can do between reset and handing over.
-
-**CRTC register readback.** Removed, for the reason under `CRTC video timing` —
-the register file does not read back on real silicon, and the screen carrying
-this report is already better evidence that the CRTC is programmed and scanning
-than any register comparison could be.
-
-**Keyboard.** Removed entirely.
-
-And implicitly, anything visible on screen is also testing the CRTC, the video
-controller, text VRAM, the CGROM and the monitor contrast register, since none
-of the text would appear without all of them working.

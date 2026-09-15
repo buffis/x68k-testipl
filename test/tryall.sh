@@ -26,9 +26,22 @@ for spec in "xvi:x68kxvi:ipl11:iplromxv.dat" \
   # MAME's x68030 set wants an scsiinrom.dat we do not have; a stand-in only
   # has to satisfy the loader, since our ROM never calls into it.
   [ $mach = x68030 ] && cp $STOCK/scsiinco.bin $d/tmp/scsiinrom.dat
+  # A stock rompath as well as ours.  Booting the stock ROM once initialises
+  # SRAM: MAME starts with blank NVRAM, which is a flat backup battery as far as
+  # the signature test is concerned, and our ROM never writes SRAM because it
+  # boots nothing.  Each machine keeps its own NVRAM, so each needs its own
+  # warm-up -- without this, models nothing else happens to have booted report a
+  # spurious SRAM signature FAIL.
+  rm -rf ${d}_stock; mkdir -p ${d}_stock
+  cp $d/tmp/* ${d}_stock/ 2>/dev/null
+  (cd ${d}_stock && zip -q -j ./$mach.zip ./* && rm -f ./*.dat ./*.bin ./*.ic11 ./*.ic12)
+
   cp $ROM $d/tmp/$iplname
   (cd $d/tmp && zip -q -j ../$mach.zip ./*)
   rm -rf $d/tmp
+
+  mame $mach -rompath ./${d}_stock -bios $bios -ram 4m -video none -sound none \
+    -window -nomaximize -nothrottle -seconds_to_run 14 >/dev/null 2>&1 || true
 
   echo "########## $model  ->  mame $mach -bios $bios ##########"
   mame $mach -rompath ./$d -bios $bios -ram 4m -video none -sound none -window -nomaximize -nothrottle \

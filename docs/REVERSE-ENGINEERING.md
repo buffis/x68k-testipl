@@ -121,41 +121,6 @@ mame x68000 -rompath ./roms -bios ipl10 -video none -sound none -nothrottle \
      -seconds_to_run 20 -autoboot_script probe.lua -autoboot_delay 0
 ```
 
-### What this answered
-
-The probes themselves were one-off instruments and have been removed now that
-the questions are settled, but the questions are worth recording, because they
-are the ones a pre-IPL program has to ask:
-
-- Where does the 68000 actually fetch its reset vector?
-- Does the stock IPL install its own bus and address error vectors, and when?
-- Does it write the supervisor area register at `$E86001`, and at what point in
-  the sequence relative to first touching main RAM?
-- Which hardware addresses does a known-good IPL write during a full boot, with
-  what first value, and in what order?
-- Which MFP registers get programmed, and when?
-- What does the IPL leave in the sprite/BG controller — and what does it write
-  on the way there? (Several of those registers read back `$FF`, so the state
-  after boot does not tell you what was programmed.)
-
-Writing one script per question, rather than one general tracer, is what made
-the answers legible. `BOOT-SEQUENCE.md` is the accumulated result.
-
-### The technique worth stealing
-
-**Boot the machine and read the live vector table**, rather than disassembling
-the IPL to find a routine. IOCS keeps one longword per call number at `$000400`,
-so call `$C0` (`_SP_INIT`) is simply the longword at `$000400 + 0xC0*4`, and it
-hands you the entry address directly.
-
-That is how `_SP_INIT` was located at `$FFC418` in the Compact IPL — and
-disassembling from there showed it opens with a guard that reads CRTC R20, masks
-the low byte, and refuses to touch sprite hardware at all when it reads `$16`.
-`$16` is exactly what our `video_init` writes. That one read explained why sprite
-RAM bus-errors on real hardware.
-
-Static and dynamic together: the tap finds the address, the disassembler explains
-the code there.
 
 ### Finding where a machine is stuck
 
@@ -168,27 +133,3 @@ _G.keep = emu.add_machine_frame_notifier(function ()
   print(string.format("PC $%06X SP $%06X", st["PC"].value, st["SP"].value))
 end)
 ```
-
-A PC frozen at one address with the stack pointer back at its initial value is a
-machine that *completed* and is parked, not one that crashed. That distinction
-resolved an apparent hang in the RAM test that turned out to be the harness
-dumping the screen early.
-
----
-
-## What each approach is good for
-
-**Static** answers "what does this routine do" and "what are the magic constants".
-It found the `_SP_INIT` R20 guard and the structure of MTEST's MARCH passes.
-
-**Dynamic** answers "what happens, in what order, and when" — and, crucially,
-"what does the IPL *not* do". Several findings here are absences: the stock IPL
-never touches sprite RAM during boot, so there was no enabling sequence of its
-own to copy. You cannot see an absence in a disassembly listing without reading
-all of it; a tap that never fires shows it immediately.
-
-**Neither tells you about real hardware.** Every finding above is about an
-*emulated* machine, and `MAME-DIFFERENCES.md` exists because several of them did
-not survive contact with a real PRO — MAME's `areaset_w` is a `// TODO` stub, and
-its CRTC registers read back where real silicon returns zero. Traces tell you
-what the IPL *intends*; only the machine tells you what happens.

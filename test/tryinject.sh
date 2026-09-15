@@ -30,6 +30,18 @@ for spec in "exbios:exbios/exbios_v1.34.24_220429.rom:x68000:ipl10:iplrom.dat" \
   d=roms_inj_$name
   rm -rf $d; mkdir -p $d/tmp
   cp $STOCK/cgrom.dat $STOCK/iplrom*.dat $STOCK/*.bin $STOCK/*.ic11 $STOCK/*.ic12 $d/tmp/ 2>/dev/null
+  # Boot the stock ROM once first so SRAM is initialised.  MAME starts with
+  # blank NVRAM, which the signature test correctly reads as a flat backup
+  # battery, and the POST never writes SRAM itself.  Without this the first
+  # spec in the loop reports a spurious SRAM signature FAIL while later ones
+  # pass, purely because an earlier iteration happened to warm the machine.
+  rm -rf ${d}_stock; mkdir -p ${d}_stock
+  cp $d/tmp/* ${d}_stock/ 2>/dev/null
+  ( cd ${d}_stock && zip -q -j ./$mach.zip ./* \
+    && rm -f ./*.dat ./*.bin ./*.ic11 ./*.ic12 )
+  mame $mach -rompath ./${d}_stock -bios $bios -ram 4m -video none -sound none \
+    -window -nomaximize -nothrottle -seconds_to_run 14 >/dev/null 2>&1 || true
+
   cp $bdir/ipl_post.dat $d/tmp/$iplname
   ( cd $d/tmp && zip -q -j ../$mach.zip ./* )
   rm -rf $d/tmp
