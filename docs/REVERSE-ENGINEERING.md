@@ -133,3 +133,7 @@ _G.keep = emu.add_machine_frame_notifier(function ()
   print(string.format("PC $%06X SP $%06X", st["PC"].value, st["SP"].value))
 end)
 ```
+
+A PC frozen at one address with the stack pointer back at its initial value is a
+machine that *completed* and is parked, not one that crashed — the two look
+identical from the outside otherwise.

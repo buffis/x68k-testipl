@@ -185,9 +185,9 @@ FFC7B4:  rts                   ...so this returns past _SP_INIT entirely
 ```
 
 If CRTC R20's low byte is `$16`, Sharp's own code declines to touch sprite
-hardware. That is not advisory: **hardware-only**, confirmed on a real PRO, a
-single word read of `$EB8000` bus-errors at R20 `$0B16` and returns data at
-`$0B15`, `$0B11`, `$0B10`, `$0B05`, `$0B01` and `$0B00`.
+hardware. That is not advisory, and it does not show under emulation: on real
+silicon a single word read of `$EB8000` bus-errors at R20 `$0B16`, and returns
+data at `$0B15`, `$0B11`, `$0B10`, `$0B05`, `$0B01` and `$0B00`.
 
 Past the guard, `_SP_INIT` clears `$EB0000-$EB03FF` (sprite scroll registers),
 `$EB0800-$EB0809`, and all of `$EB8000-$EBFFFF` (PCG RAM), then loads the PCG

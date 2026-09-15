@@ -137,10 +137,6 @@ Two notes:
 written at which address, what a pass proves, and what it does not. The table
 below is the short version.
 
-`docs/MAME-DIFFERENCES.md` collects where the real machine behaved differently
-from MAME, with the evidence for each and an explicit list of things that turned
-out to be our bugs rather than the emulator's.
-
 `docs/REVERSE-ENGINEERING.md` describes the tools this was worked out with —
 capstone for static disassembly, and MAME's Lua read/write taps for the
 ordering questions a disassembler cannot answer — with the trace scripts in
@@ -485,10 +481,11 @@ On the PRO, **SW1** selects between the default internal IPL and the socketed
 EPROMs, so flipping one switch puts the machine back to normal and the stock
 chips never have to come out.
 
-What that machine found is in `docs/MAME-DIFFERENCES.md`: the CRTC register file
-does not read back on real silicon, sprite RAM bus-errors unless the screen mode
-allows it, and that PRO's RTC oscillator is dead — the chip answers and its alarm
-registers read back, but the clock never advances.
+Three things that machine showed, none of which an emulator will: the CRTC
+register file does not read back on real silicon, sprite RAM bus-errors unless
+the screen mode allows it, and that PRO's RTC oscillator is dead — the chip
+answers and its alarm registers read back, but the clock never advances.
+`docs/BOOT-SEQUENCE.md` has the detail.
 
 **One caveat about that machine as a reference:** it will not boot its own stock
 IPL at all, so anything unusual it reports should be treated as machine-specific

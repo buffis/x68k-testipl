@@ -219,10 +219,9 @@ is set by CRTC R20 bits 8-11. So the test switches R20 to `$0316` — the mode
 that maps the first 512 KB through as plain 16-bit words, no nibble packing —
 runs the fill and verify, then puts R20 back to `$0B16` for the display.
 
-### `Sprite RAM`
+### `Sprite RAM` — optional
 
-`$EB8000`-`$EBFFFF`. The same fill and verify, wrapped in two mode changes, and
-the line with the most history behind it.
+`$EB8000`-`$EBFFFF`. The same fill and verify, wrapped in two mode changes.
 
 Sprite RAM is not reachable in every screen mode, and `video_init` picks one
 where it is not. IOCS says so itself: `_SP_INIT` (call `$C0`, at `$FFC418` in
@@ -242,6 +241,9 @@ The display is garbled while this runs, because the rest of the CRTC timing
 still describes the old mode. **R20 is restored at the dispatch site, not inside
 the test** — that is the only place that survives a bus error, since a fault
 unwinds straight past the test's own cleanup.
+
+It is a `run_test_opt`, so a bus error reads SKIP; RAM that answers and gives
+back the wrong pattern still fails on its data.
 
 ### `SRAM signature` — read-only
 
