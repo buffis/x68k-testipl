@@ -18,7 +18,7 @@ Two modes:
 Either way it fills in the ROM self-check checksum and emits the 128K image
 plus the even/odd halves for a pair of 27C512-class EPROMs.
 
-Usage:  python3 build.py [--ipl FILE] [--out DIR] [--diag] [--vasm PATH]
+Usage:  python3 build.py [--ipl FILE] [--out DIR] [--vasm PATH]
 """
 
 import argparse
@@ -112,10 +112,6 @@ def main():
     ap.add_argument("--base", type=lambda v: int(v, 0), metavar="ADDR",
                     help="with --ipl, force the injection address instead of "
                          "using the largest unprogrammed run")
-    ap.add_argument("--diag", action="store_true",
-                    help="build the diagnostic variant: after the normal run it "
-                         "prints raw register and readback values for the RTC, "
-                         "sprite RAM and CRTC probes instead of verdicts")
     args = ap.parse_args()
 
     # The checksum loop walks the ROM a longword at a time and skips the single
@@ -148,8 +144,6 @@ def main():
     cmd = [args.vasm, "-Fbin", "-m68000", "-quiet", f"-DPOST_BASE={post_base}"]
     if chain_to is not None:
         cmd.append(f"-DIPL_ENTRY={chain_to}")
-    if args.diag:
-        cmd.append("-DDIAG=1")
     cmd += ["-o", str(payload_path), "-L", str(out / "x68post.lst"), args.src]
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
@@ -200,16 +194,15 @@ def main():
     (out / "ipl_post_even.bin").write_bytes(bytes(rom[0::2]))
     (out / "ipl_post_odd.bin").write_bytes(bytes(rom[1::2]))
 
-    tag = "  [DIAGNOSTIC BUILD]" if args.diag else ""
     if ipl is None:
         spare = IPL_LEN - len(payload) - 0x10  # minus the vectors at the front
-        print(f"standalone POST ROM{tag}")
+        print(f"standalone POST ROM")
         print(f"POST payload      {len(payload):6d} bytes  "
               f"${post_base:06X}-${IPL_BASE + end - 1:06X}  "
               f"({spare} bytes spare)")
         print(f"reset SSP         ${STACK_TOP:08X}")
     else:
-        print(f"POST injected into {args.ipl}{tag}")
+        print(f"POST injected into {args.ipl}")
         print(f"POST payload      {len(payload):6d} bytes  "
               f"${post_base:06X}-${IPL_BASE + end - 1:06X}")
         print(f"chains to         ${chain_to:08X}  (the IPL's own reset PC)")

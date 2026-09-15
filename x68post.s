@@ -58,11 +58,6 @@ FDC             equ     $E94000
 SCSI            equ     $E96020         ; register n at SCSI+1+2n
 SCC             equ     $E98000
 PPI             equ     $E9A000
-; MIDI board (YM3802) -- Sharp's CZ-6BM1 or a compatible -- on the expansion
-; bus.  Register n is the odd byte at MIDI+1+2n; an empty slot drives no DTACK,
-; so probing it bus-errors.
-MIDI            equ     $EAFA00
-MIDI_WDR        equ     MIDI+1+3*2      ; reg 3 reads back the last byte written
 SPRRAM          equ     $EB8000
 SPRRAM_END      equ     $EC0000
 SPRREG          equ     $EB0808         ; BG / sprite control register
@@ -139,17 +134,10 @@ post_entry:
                 reset                           ; reset external devices
 
 ;--- let low memory be written -----------------------------------------------
-; The supervisor area register governs what may be written to low memory, and
-; it comes up in an undefined state at power-on.  A stock IPL clears it within
-; a few instructions of reset -- PC $FF00B0 on IPL 1.0, before it touches
-; anything else -- and we never did.
-;
-; On a real PRO that cost us every cold boot: writes above $400 hung the bus
-; while reads of the same addresses worked, the vector table below $400 stayed
-; writable, and a warm reset was always fine because the previous run had left
-; the register clear.  MAME does not implement this register at all (areaset_w
-; is a TODO in its x68000 driver), so nothing in emulation could ever have
-; shown it.
+;  Governs what may be written to low memory and comes up undefined at
+; power-on; leave it alone and writes above $400 hang the bus on real hardware.
+; A stock IPL clears it within a few instructions of reset.  MAME does not
+; implement the register, so this cannot be verified in emulation.
                 move.b  #0,AREASET
 
 ;--- make video RAM decode predictable before anything touches it ------------
@@ -187,23 +175,11 @@ post_entry:
                 bne     dead_end
                 lea     $2000,a7
 .have_stack:
-; Install bus and address error handlers before touching any hardware, so that
-; probing something which is not fitted on this model cannot derail the POST.
-; They need a vector table in low RAM; if that is dead there is nothing that
-; can be done about it, and test_dram reports it.
-;--- the whole vector table, not just two of them -----------------------------
-; Both IPLs fill all 256 exception vectors as their first act after RESET, and
-; we never did -- we set bus error and address error and left the other 254
-; holding whatever the RAM powered up with.
-;
-; That is not survivable on a cold boot.  Level 7 is non-maskable, so the
-; move.w #$2700,sr above does not protect us: any interrupt the hardware raises
-; from its undefined power-on state vectors through a random longword and the
-; machine is gone.  A warm reset hides it, because by then something has been
-; through low memory and left it looking like code addresses rather than noise.
-;
-; Point everything at a handler that returns, then put the two we care about
-; back on top.
+; Fill ALL 256 exception vectors before touching hardware, not just the two we
+; use.  Level 7 is non-maskable, so the move.w #$2700,sr above is no protection:
+; any interrupt raised from the undefined power-on state would vector through
+; whatever noise low RAM holds.  Both stock IPLs do this as their first act.
+; Point everything at a handler that returns, then install the two real ones.
                 lea     $0,a0
                 move.l  #vec_ignore,d0
                 move.w  #255,d1
@@ -216,15 +192,10 @@ post_entry:
                 move.l  #nmi_handler,$07C.w     ; level 7 -- see below
 
 ;--- stop the DMAC before anything reads or writes memory in bulk ------------
-; The HD63450 comes up with undefined registers, and a channel that powers up
-; armed will arbitrate for the bus and run transfers of its own.  A CPU stalled
-; mid-write with no bus error is exactly what a DMA controller holding the bus
-; looks like, and the POST has never touched the DMAC before test_dram -- exbios
-; programs it, we did not.
-;
-; Abort every channel, idle it, then clear its status.  Guarded, because this is
-; the first device the POST touches and a fault here must not jump through a
-; stale a3.
+; The HD63450 comes up undefined, and a channel that powers up armed will
+; arbitrate for the bus and run transfers of its own.  Abort every channel, idle
+; it, clear its status.  Guarded: this is the first device touched, so a fault
+; here must not jump through a stale a3.
                 lea     .dmac_done,a3
                 move.l  a7,a4
                 lea     DMAC,a0
@@ -238,29 +209,18 @@ post_entry:
                 dbra    d1,.dmac_chan
 .dmac_done:
 ;--- video first, then anything that has to be remembered --------------------
-; Text VRAM is refreshed by the display.  Testing it before the CRTC is
-; generating timing means filling half a megabyte and verifying it some
-; milliseconds later with nothing holding the cells up, and on a real PRO that
-; fails every cold boot while passing after every reset -- because a reset
-; leaves the CRTC still scanning from the previous run.  The stack probe above
-; survives either way: it writes and reads back within microseconds.
-;
-; So bring the display up, wait for it to actually scan, and only then test.
+; Text VRAM is refreshed by the display, so its cells decay while the CRTC is
+; idle.  Bring the display up and wait for it to actually scan before testing
+; half a megabyte of it.  (The stack probe above is safe either way: it writes
+; and reads back within microseconds.)
                 bsr     video_init              ; CRTC + video controller + palette
                 bsr     wait_scanning
 
 ;--- get the stack out of main RAM ------------------------------------------
-; The probe at entry runs before the CRTC is programmed, and on a cold machine
-; text VRAM does not answer then -- so it takes the fallback and puts the stack
-; at $2000, in main RAM.  That is a trap: test_dram patterns from $400 upwards
-; and walks straight over it, destroying the return addresses underneath.  The
-; machine then jumps through a corrupted rts and stops dead, which looks exactly
-; like a stalled bus.  It is what stalled a real PRO at $1C00 -- the first slice
-; to reach $2000 -- and at $400 in earlier builds, whose slices were large
-; enough to span it from the start.
-;
-; The display is scanning now, so ask again.  Straight-line code with nothing
-; live on the stack, so a7 can simply be reloaded.
+; The probe at entry ran before the CRTC was programmed, so on a cold machine it
+; takes the fallback and leaves the stack at $2000 -- inside the region test_dram
+; patterns over.  Now that the display is scanning, ask again.  Straight-line
+; code with nothing live on the stack, so a7 can simply be reloaded.
                 lea     TVRAM_RESV,a0
                 move.l  #$5A5AA5A5,d0
                 move.l  #$0F0FF0F0,d1
@@ -277,21 +237,17 @@ post_entry:
 .keep_stack:
 
 ; The work area lives in text VRAM, so it is only held up once the display is
-; scanning.  Everything here used to be set before video_init and had to
-; survive the whole of test_tvram unrefreshed: on a cold boot w_progcol lost
-; its $FFFF, progress_clear then took the 0 for a real column and wiped the
-; first report line's label.  A warm reset was fine because refresh never
-; stopped.  So initialise after the display is up, not before.
+; scanning.  Initialise it here, after video_init -- not before, where it would
+; have to survive the whole of test_tvram unrefreshed.
                 clr.w   w_fail
                 clr.w   w_buserr
                 clr.l   w_ramsize
                 clr.w   w_col
                 clr.w   w_row
                 move.w  #$FFFF,w_addrcol
-                clr.w   w_fdetail               ; the Text VRAM line does not go
-                                                ; through run_test, so nothing
-                                                ; else would clear it, and cold
-                                                ; VRAM holds garbage
+                clr.w   w_fdetail               ; the Text VRAM line bypasses
+                                                ; run_test, so nothing else
+                                                ; would clear it
                 move.w  #$FFFF,w_progcol
 
                 bsr     serial_init
@@ -309,16 +265,6 @@ post_entry:
                 bsr     print_str
                 bsr     newline
                 bsr     newline
-
-; The diagnostic page runs BEFORE the tests, not after.  It used to come last,
-; which made it useless on the machine it exists for: a real PRO stalls inside
-; test_dram on a cold boot, so the run never reached the diagnostics at all.
-; Raw values are the whole point of this build, so they come first and the
-; ordinary test sequence follows -- if that then hangs, the page has already
-; been printed and read.
-                ifd     DIAG
-                bsr     diag_section
-                endif
 
 ;=============================================================================
 ; the tests
@@ -365,10 +311,6 @@ post_entry:
                 lea     test_scsi,a1
                 bsr     run_test_opt
 
-                lea     n_midi,a0
-                lea     test_midi,a1
-                bsr     run_test_opt
-
 ;--- memory ------------------------------------------------------------------
                 lea     n_romsum,a0
                 lea     test_romsum,a1
@@ -376,9 +318,8 @@ post_entry:
 
                 bsr     report_cgsum
 
-; The verdict was worked out at startup, before anything could be printed --
-; the display has to be trusted before the report means anything.  This is
-; where it gets said, with the rest of the memory.
+; Verdict was worked out at startup, before anything could be printed; reported
+; here with the rest of memory.
                 lea     n_tvram,a0
                 bsr     line_start
                 move.w  w_tvram,d0
@@ -389,10 +330,8 @@ post_entry:
                 lea     test_gvram,a1
                 bsr     run_test
 
-; Sprite RAM access bus-errors on a real X68000 PRO -- nothing drives DTACK
-; with the sprite plane disabled, which is how the POST leaves it.  run_test
-; would call that a failure; run_test_opt calls a fault SKIP, while RAM that
-; answers and gives back the wrong pattern still fails on its data.
+; Optional: sprite RAM does not answer the bus in every screen mode, so a fault
+; here reads SKIP.  RAM that answers with the wrong pattern still FAILs.
                 lea     n_sprram,a0
                 lea     test_sprram,a1
                 bsr     run_test_opt
@@ -774,9 +713,8 @@ test_dram:
                 move.l  w_ramsize,d6
                 beq     .nosize                 ; sizing failed; nothing to test
 ;--- phase 2: pattern test from $400 up, leaving the vector table alone ------
-; Never pattern over our own stack.  If it is still in main RAM then the
-; fallback was taken and the display probe did not rescue it; testing anyway
-; would overwrite the return addresses under a7 and hang.  Say so instead.
+; Never pattern over our own stack.  If a7 is still in main RAM then both stack
+; probes failed; patterning would overwrite the return addresses under it.
                 cmp.l   #TVRAM,a7
                 bcc.s   .stack_is_safe
                 moveq   #2,d0                   ; SKIP rather than self-destruct
@@ -819,11 +757,9 @@ test_dram:
 
 ; .pslice: take up to 2048 longwords (8K) off d6 and return it in d1.
 ;
-; The slice size only sets how precisely the address on screen names a stall --
-; it is not a hardware workaround.  It was briefly cut to 512 while chasing what
-; looked like a limit on consecutive RAM writes on a real PRO; that turned out
-; to be this code overwriting its own stack, so the small slices bought nothing
-; and cost about twelve seconds at 12 MB.
+; The slice size only sets how precisely the on-screen address names a stall.
+; It is not a hardware workaround, and smaller slices cost real time: 512 adds
+; about twelve seconds at 12 MB.
 .pslice:
                 move.l  d6,d1
                 cmp.l   #2048,d1
@@ -1062,30 +998,23 @@ test_mfp:
                 rts
 
 ;--- CRTC liveness, via the MFP GPIP video timing inputs ---------------------
-; The CRTC register file is write-only on real silicon: R00/R04 read back
-; $0000 on a real PRO while the screen is plainly being scanned.  So no
-; readback test of the CRTC can work, and the one that used to live here
-; only ever passed because MAME implements those registers as readable.
+; The CRTC register file is write-only on real silicon -- R00/R04 read back
+; $0000 while the screen is plainly being scanned -- so no readback test of it
+; can work.  Ask the MFP instead: the CRTC drives V-DISP into GPIP bit 4 and
+; H-SYNC into bit 7, so either one toggling is externally visible proof that it
+; is generating timing.
 ;
-; Ask the MFP instead.  The CRTC drives V-DISP into GPIP bit 4 and H-SYNC into
-; bit 7, so if either of those toggles the CRTC is generating timing -- that is
-; externally visible proof, and it needs nothing to read back.
+; Sample the port hard, accumulating OR and AND; OR & ~AND is the set of bits
+; that changed.  An undriven bus reads all-ones constantly, so it cancels out
+; and correctly reads as dead rather than as live data.
 ;
-; Sample the port hard, accumulating OR and AND.  A bit set in OR and clear in
-; AND changed during the window.  An undriven bus reads all-ones constantly,
-; so it cancels out and correctly reports dead rather than masquerading as
-; live data, which is exactly how the old readback tests were fooled.
+; GPIP bit 6 (raster interrupt) is deliberately out of the mask: it only toggles
+; once a raster line has been programmed.  For the same reason one of the two
+; signals is enough.
 ;
-; GPIP bit 6 is the CRTC raster interrupt.  It only toggles once a raster line
-; has been programmed, so it is deliberately not in the mask -- a healthy
-; machine that never set one would otherwise fail.  For the same reason the
-; verdict needs only one of the two signals, not both.
-;
-; The loop exits as soon as both bits have moved, which is a little over one
-; frame on a healthy machine; the counter only bounds the dead case.  V-DISP
-; toggles once per frame (~18 ms), H-SYNC once per scanline, so the window has
-; to be able to span a frame: 40000 iterations is ~200 ms on a 10 MHz 68000
-; and still ~60 ms on a 25 MHz 68030.
+; Exits as soon as both bits move, about one frame; the counter only bounds the
+; dead case.  V-DISP toggles once per ~18 ms, so the window must be able to span
+; a frame: 40000 iterations is ~200 ms at 10 MHz, ~60 ms on a 25 MHz 68030.
 test_vidtiming:
                 movem.l d1-d4/a0,-(sp)
                 lea     MFP_GPIP,a0
@@ -1116,57 +1045,14 @@ test_vidtiming:
                 movem.l (sp)+,d1-d4/a0
                 rts
 
-;--- MIDI board --------------------------------------------------------------
-; Sharp's CZ-6BM1 is the board this was written against, but it is not the only
-; one: third-party cards put the same YM3802 at the same addresses, so the test
-; works on those too and the report line says only "MIDI" rather than naming a
-; board it cannot actually identify.
-;
-; Optional expansion card, so this is a run_test_opt: an empty slot answers no
-; bus cycle at all and reads SKIP, exactly as SCSI does on a PRO.
-;
-; Presence alone is not proof the board works, and a floating bus reads $FF on
-; everything, so this asks the YM3802 to prove itself: every write to the chip
-; latches the byte into its write-data register, and register 3 reads that
-; latch back.  Two different patterns rule out a bus stuck high or low.
-;
-; Register 0 is the write target because it has no side effects -- writing
-; register 1 would reload the register-group select and can reset the device.
-;
-; CAVEAT: the latch behaviour is modelled on MAME's YM3802 and is not verified
-; against a real CZ-6BM1.  A board that is plainly fitted but reports FAIL here
-; means the latch, not the board, is what to doubt first.
-test_midi:
-                movem.l d1/a0,-(sp)
-                lea     MIDI,a0
-                tst.b   1(a0)                   ; bus-errors out if no card
-                move.b  #$5A,1(a0)
-                nop
-                move.b  MIDI_WDR,d1
-                cmp.b   #$5A,d1
-                bne.s   .bad
-                move.b  #$A5,1(a0)
-                nop
-                move.b  MIDI_WDR,d1
-                cmp.b   #$A5,d1
-                bne.s   .bad
-                moveq   #0,d0
-                bra.s   .out
-.bad:           moveq   #1,d0
-.out:           movem.l (sp)+,d1/a0
-                rts
-
 ;--- RP5C15 RTC: is the chip there and does its bus work? --------------------
 ; Bank 1 holds the alarm registers, which are plain storage and do not depend on
-; the oscillator at all.  Select bank 1, write $5 then $A to alarm register 2
-; and read each back.  That proves the register file and the bus to the chip,
-; and nothing else -- whether the clock actually runs is test_rtcosc's problem.
+; the oscillator at all.  Select bank 1, write $5 then $A to alarm register 2 and
+; read each back.  Proves the register file and the bus to the chip, and nothing
+; else -- whether the clock runs is test_rtcosc's problem.
 ;
-; This used to check that the seconds and minutes registers held legal BCD,
-; which says almost nothing: a clock frozen at a plausible time passes it, and
-; it cannot tell a chip that is not answering from one holding bad data.  It
-; only caught the fault on a real PRO because the registers there happened to
-; read $F, which is not a legal digit.
+; Deliberately not a BCD sanity check on the time registers: a clock frozen at a
+; plausible time would pass that.
 test_rtc:
                 movem.l d1-d2,-(sp)
                 move.b  RTC_MODE,d1
@@ -1198,22 +1084,18 @@ test_rtc:
                 rts
 
 ;--- RP5C15 oscillator: does the clock actually advance? ---------------------
-; The 32.768 kHz crystal and the battery corrosion around it are the classic
-; X68000 failure, and nothing above would notice: the registers keep whatever
-; they were left holding.  So read the seconds, wait, and read them again.
+; A dead 32.768 kHz crystal, or battery corrosion around it, is the classic
+; X68000 failure and nothing above would notice: the registers keep whatever
+; they were left holding.  Read the seconds, wait, read again.
 ;
-; The timer-enable bit is set first.  A clock that is merely switched off is a
-; different thing from a dead oscillator, and only the second is worth
-; reporting -- MAME comes up with the bit clear, which is why the diagnostic
-; page used to show the time never moving under emulation.
+; Timer-enable is set first -- a clock merely switched off is a different fault
+; from a dead oscillator, and MAME comes up with the bit clear.
 ;
-; Timed off V-DISP rather than delay_seconds.  delay_seconds is calibrated for
-; a 10 MHz 68000 and runs several times faster on an X68030, which made its
-; "one second" far too short to see the clock move and failed this test on a
-; perfectly good machine.  Video frames are ~55 Hz whatever the CPU is doing,
-; so counting them measures real time.  If the CRTC is not scanning there are
-; no frames to count and it falls back to delay_seconds -- a machine in that
-; state has already failed the video timing test a line earlier.
+; Timed by counting V-DISP frames, not delay_seconds: that is calibrated for a
+; 10 MHz 68000 and runs several times faster on an X68030.  Frames are ~55 Hz
+; whatever the CPU does, so counting them measures real time.  With no CRTC
+; scanning there are no frames and it falls back to delay_seconds -- such a
+; machine has already failed the video timing test a line earlier.
 test_rtcosc:
                 movem.l d1-d2,-(sp)
                 move.b  RTC_MODE,d0
@@ -1277,21 +1159,14 @@ wait_frames:
 .out:           movem.l (sp)+,d1-d2
                 rts
 
-; sprite_init: put the sprite/BG controller into the state MTEST reaches it in.
+; sprite_init: put the sprite/BG controller into a state that lets the CPU reach
+; sprite RAM.
 ;
 ; The four timing registers get the values and order a stock IPL writes, tapped
-; from a live boot -- they read back $FF, so the state after boot does not tell
-; you what was programmed.  The control register gets $0000, which is what
-; MTEST writes, not the $0010 the IPL leaves behind.
-;
-; That distinction is the whole point.  Writing $0010 with the timing registers
-; set still failed on a real PRO, and so did writing $0000 without them; MTEST
-; does both and works, on the same machine.  Bit 4 of the control register
-; looks like a BG enable, and a controller that is fetching from its own RAM is
-; not going to let the CPU in.
-;
-; The stock IPL never touches sprite RAM at all during boot, so there was no
-; enabling sequence of its own to copy -- only MTEST's.
+; from a live boot -- they read back $FF, so post-boot state does not tell you
+; what was programmed.  The control register must then get $0000, not the $0010
+; an IPL leaves behind: bit 4 looks like a BG enable, and a controller fetching
+; from its own RAM will not let the CPU in.  Both halves are needed.
 sprite_init:
                 move.w  #$00FF,SPR_HDISP
                 move.w  #$00FF,SPR_HTOTAL
@@ -1350,12 +1225,10 @@ test_opm:
                 rts
 
 ;--- MSM6258 ADPCM -----------------------------------------------------------
-; Removed.  The only readable register drives a couple of bits and leaves the
-; rest open, so on real hardware this read returns bus float: a healthy PRO
-; gave $FF on one boot and $C0 on the next.  The old test called $FF "absent",
-; which made it a coin toss rather than a test.  Proving this chip alive means
-; commanding it and observing a state change, which is more than a POST can do
-; between reset and handing over.
+; Not tested.  Its only readable register leaves most bits open, so on real
+; hardware the read returns bus float -- a healthy PRO gives $FF on one boot and
+; $C0 on the next.  Proving the chip alive needs a command and an observed state
+; change, which is more than a POST can do between reset and handing over.
 
 ;--- uPD72065 FDC ------------------------------------------------------------
 test_fdc:
@@ -1425,17 +1298,15 @@ test_ppi:
 ;--- sprite / PCG RAM --------------------------------------------------------
 test_sprram:
                 movem.l d1-d2/a0,-(sp)
-; Sprite RAM is not reachable in every screen mode, and video_init picks one of
-; the modes where it is not.  IOCS says so itself: _SP_INIT ($FFC418 in the
-; Compact IPL) opens with a guard that reads CRTC R20, masks the low byte, and
-; refuses to touch sprite hardware at all when it is $16 -- which is exactly
-; what video_init writes ($0B16, the 768-wide high-resolution mode).
+; Sprite RAM is not reachable in every screen mode, and video_init picks one
+; where it is not: IOCS _SP_INIT ($FFC418 in the Compact IPL) opens with a guard
+; that reads CRTC R20 and refuses to touch sprite hardware when the low byte is
+; $16 -- exactly what video_init writes.  On real hardware a word read of
+; $EB8000 bus-errors at $0B16 and returns data at $0B15.
 ;
-; Confirmed on a real PRO: a single word read of $EB8000 bus-errors at $0B16
-; and returns data at $0B15, $0B11, $0B10, $0B05, $0B01 and $0B00.  So switch
-; to $0B15 for the test.  The display is garbled while this runs, because the
-; rest of the CRTC timing still describes the old mode; R20 goes back at the
-; dispatch site, which is the only place that survives a bus error.
+; So switch to $0B15 for the test.  The display is garbled while it runs, since
+; the rest of the CRTC timing still describes the old mode.  R20 is restored at
+; the dispatch site -- the only place that survives a bus error.
                 move.w  #$0B15,CRTC+$28
                 nop
                 move.w  VC_R2,d2
@@ -1453,12 +1324,10 @@ test_sprram:
                 rts
 
 ;--- CRTC --------------------------------------------------------------------
-; Removed.  The register file does not read back on real silicon: a PRO with a
-; visibly correct 768x512 display returns $0000 from R00, R04 and R20 alike.
-; MAME implements those registers as readable, which is the only reason the
-; old read-back test ever passed.  The screen carrying this report is already
-; better evidence that the CRTC is programmed and scanning than any register
-; comparison could be.
+; Not tested by readback: the register file does not read back on real silicon.
+; A machine with a visibly correct 768x512 display returns $0000 from R00, R04
+; and R20 alike.  See test_vidtiming, which asks the MFP instead -- and the
+; screen carrying this report is itself better evidence than any readback.
 
 ;=============================================================================
 ; video
@@ -1603,11 +1472,10 @@ newline:
                 move.w  #SCR_ROWS-1,w_row
 .ok:            rts
 
-; scroll_up: shift both text planes up one row and blank the last one.  Without
-; it, everything past the bottom of the screen landed on the final line and
-; overwrote itself, which is what the diagnostic page did once it grew past 32
-; rows.  Only runs on overflow, and copies about 124K, so it costs nothing on a
-; report that fits.
+; scroll_up: shift both text planes up one row and blank the last one, so a
+; report longer than the screen does not overwrite its own final line.  Only
+; runs on overflow, and copies about 124K, so it costs nothing on a report that
+; fits.
 scroll_up:
                 movem.l d0-d2/a0-a2,-(sp)
                 lea     TVRAM,a2
@@ -1664,15 +1532,10 @@ print_dec:
 ;=============================================================================
 ; run_test / run_test_opt: a0 = test name, a1 = test routine.
 ;
-; Prints the name, establishes bus-error recovery around the call, runs the
-; test and prints the verdict.  Without the recovery, probing a device that is
-; not fitted on this model bus-errors into fault_handler, which would jump
-; through whatever a3 happened to hold.
-;
-; A bus error means nothing responded at that address at all.  run_test calls
-; that a failure; run_test_opt calls it SKIP, which is what you want for
-; hardware that is genuinely optional -- a controller that is fitted but broken
-; still answers the bus cycle and fails on its data instead.
+; Prints the name, establishes bus-error recovery around the call, runs the test
+; and prints the verdict.  A bus error means nothing responded at all: run_test
+; calls that FAIL, run_test_opt calls it SKIP for genuinely optional hardware.
+; Either way a device that answers but returns bad data fails on its data.
 run_test:
                 moveq   #5,d2                   ; verdict if the probe faults
                 bra.s   run_test_common
@@ -1680,12 +1543,9 @@ run_test_opt:
                 moveq   #2,d2                   ; SKIP if the probe faults
 run_test_common:
                 movem.l d1-d2/a0-a4,-(sp)
-; The fault verdict cannot live in a register.  fault_handler unwinds the stack
-; and jumps straight to .fault, so the test's own movem restore never runs and
-; whatever it left in d2 survives.  test_sprram used d2 to stash VC R2, so a
-; sprite RAM bus error -- which should read SKIP -- arrived at .fault as $0020
-; and printed FAIL instead.  Anything a test cannot reach is safe; a work word
-; is.
+; The fault verdict must live in a work word, not a register: fault_handler
+; unwinds the stack straight to .fault, so the test's own movem restore never
+; runs and whatever it left in d2 would survive instead.
                 move.w  d2,w_fverdict
                 clr.w   w_fdetail
                 move.w  #$FFFF,w_progcol
@@ -1783,17 +1643,17 @@ verdict:
                 beq.s   .stuck
                 clr.w   w_fdetail
                 lea     s_indent,a0
-                bsr     diag_str
+                bsr     detail_str
                 move.l  w_faddr,d0
                 moveq   #8,d2
                 bsr     print_hexdollar
                 lea     s_exp,a0
-                bsr     diag_str
+                bsr     detail_str
                 move.l  w_fexp,d0
                 moveq   #8,d2
                 bsr     print_hexdollar
                 lea     s_got,a0
-                bsr     diag_str
+                bsr     detail_str
                 move.l  w_fgot,d0
                 moveq   #8,d2
                 bsr     print_hexdollar
@@ -1801,12 +1661,12 @@ verdict:
 .stuck:
                 clr.w   w_fdetail
                 lea     s_indent,a0
-                bsr     diag_str
+                bsr     detail_str
                 move.l  w_faddr,d0
                 moveq   #8,d2
                 bsr     print_hexdollar
                 lea     s_stuck,a0
-                bsr     diag_str
+                bsr     detail_str
                 move.l  w_fgot,d0
                 moveq   #8,d2
                 bsr     print_hexdollar
@@ -1955,8 +1815,7 @@ serial_crlf:
 ; delay_seconds: d0 = seconds
 ;=============================================================================
 ; Calibrated for a 10MHz 68000; a 16MHz XVI Compact runs it about 1.6x faster.
-; Nothing sets up the MFP USART any more, so the keypress shortcut this used to
-; have could never fire and has been removed.
+; Prefer wait_frames where real time matters -- see test_rtcosc.
 delay_seconds:
                 movem.l d0-d2,-(sp)
                 move.l  d0,d2
@@ -1978,7 +1837,7 @@ delay_seconds:
 print_hexdollar:
                 movem.l d0/a0,-(sp)
                 lea     s_dollar,a0
-                bsr     diag_str
+                bsr     detail_str
                 movem.l (sp)+,d0/a0
                 bra     print_hex
 
@@ -1998,12 +1857,12 @@ print_hex:
 .digit:         move.b  d3,-(a0)
                 lsr.l   #4,d0
                 dbra    d4,.loop
-                bsr     diag_str
+                bsr     detail_str
                 movem.l (sp)+,d0-d4/a0
                 rts
 
-;--- diag_str: a0 = asciiz, to screen and serial ----------------------------
-diag_str:
+;--- detail_str: a0 = asciiz, to screen and serial --------------------------
+detail_str:
                 movem.l d1/a0,-(sp)
                 moveq   #COL_NORMAL,d1
                 bsr     print_str
@@ -2011,649 +1870,17 @@ diag_str:
                 movem.l (sp)+,d1/a0
                 rts
 
-diag_eol:
+detail_eol:
                 bsr     newline
                 bsr     serial_crlf
                 rts
 
-;=============================================================================
-; diagnostics -- DIAG builds only
-;=============================================================================
-; v2, written against what a real X68000 PRO actually reported:
-;
-;   CRTC R00/R04 read back $0000, not the written values and not floating
-;   high, while the screen is plainly being scanned -- the register file is
-;   write-only on real silicon and MAME's readable implementation is wrong.
-;   So this version stops reading CRTC registers and watches the MFP GPIP
-;   video timing inputs instead, which is the only externally visible proof
-;   that the CRTC is running.
-;
-;   RTC mode register reads $F8: the low nibble is the real 4-bit register
-;   ($8 = timer enabled, bank 0 already selected) and the high nibble is the
-;   undriven half of the bus floating high.  So the chip answers, but the time
-;   registers read $7/$F and never advance.  This version dumps the whole
-;   bank, then writes and reads back a bank 1 register: if that holds, the
-;   device and its bus are fine and the fault is the oscillator alone.
-;
-;   Probing sprite RAM hung the machine outright.  v1 called it from outside
-;   run_test, so a3/a4 were never set and fault_handler jumped through a stale
-;   pointer.  Every probe here goes through diag_try, which installs the same
-;   recovery run_test uses and prints BUSERR instead of locking up.
-;
-; Nothing needs to leave the machine tidy: the stock IPL issues RESET and
-; reprograms every device before it boots.
-                ifd     DIAG
-
-SPRCTL          equ     $EB0800         ; BG scroll registers
-
-diag_section:
-                movem.l d0-d7/a0-a4,-(sp)
-                lea     s_diag,a0
-                bsr     diag_str
-                bsr     diag_eol
-                bsr     diag_eol
-
-;--- canaries: prove the fault recovery itself works ------------------------
-; The first MUST print BUSERR, on real hardware and under MAME alike: a word
-; read from an odd address is an address error, which the 68000 raises from the
-; CPU itself before any bus cycle, and fault_handler catches it on the same
-; vector path as a bus error.  If this line prints a value, recovery is not
-; working; if the report stops here, it is broken outright and nothing below
-; can be trusted.
-                lea     d_canary1,a0
-                lea     $EC0001,a2              ; odd -> address error
-                lea     p_rw,a1
-                moveq   #4,d2
-                bsr     diag_line
-
-; The second is informational.  $EC0000 is the user I/O area, unpopulated on a
-; stock machine, so a machine with a working bus timeout reads BUSERR.  MAME
-; maps it and returns 0000, so a value here is not in itself a fault -- it just
-; says a BUSERR further down means "nothing answered" rather than "timed out".
-                lea     d_canary2,a0
-                lea     $EC0000,a2
-                lea     p_rw,a1
-                moveq   #4,d2
-                bsr     diag_line
-
-;--- is the CRTC scanning? ---------------------------------------------------
-; The CRTC register file does not read back, so ask the MFP instead: its GPIP
-; inputs carry V-DISP and H-SYNC.  Sample the port hard for a fraction of a
-; second and report which bits moved.  Printed as OR:AND -- a bit set in OR and
-; clear in AND toggled during the sample, which is what a running CRTC looks
-; like.  If OR and AND are equal, nothing moved and the video timing is dead.
-                lea     d_gpip,a0
-                bsr     line_start
-                bsr     diag_gpip
-                moveq   #4,d2
-                bsr     print_hex
-                bsr     diag_eol
-
-                lea     d_gptog,a0
-                bsr     line_start
-                bsr     diag_gpip
-                move.l  d0,d1
-                lsr.l   #8,d1                   ; OR
-                not.l   d0
-                and.l   d1,d0                   ; OR & ~AND = bits that moved
-                and.l   #$FF,d0
-                moveq   #2,d2
-                bsr     print_hex
-                bsr     diag_eol
-
-;--- CRTC registers, for the record -----------------------------------------
-; Confirm the write-only behaviour is uniform rather than specific to R00/R04.
-                lea     d_crtc0,a0
-                lea     CRTC+0,a2
-                lea     p_rw,a1
-                moveq   #4,d2
-                bsr     diag_line
-
-                lea     d_crtc4,a0
-                lea     CRTC+8,a2
-                lea     p_rw,a1
-                moveq   #4,d2
-                bsr     diag_line
-
-                lea     d_crtc20,a0
-                lea     CRTC+$28,a2
-                lea     p_rw,a1
-                moveq   #4,d2
-                bsr     diag_line
-
-                lea     d_vcr2,a0
-                lea     VC_R2,a2
-                lea     p_rw,a1
-                moveq   #4,d2
-                bsr     diag_line
-
-;--- ADPCM, which now passes ------------------------------------------------
-                lea     d_adpcm,a0
-                lea     ADPCM+1,a2
-                lea     p_rb,a1
-                moveq   #2,d2
-                bsr     diag_line
-
-;--- RTC: dump the whole time bank ------------------------------------------
-; Registers 0..7 are seconds, minutes, hours and day-of-week, two BCD nibbles
-; each, low nibble only.  Printed as eight nibbles, register 7 first.
-                lea     d_rtcbank,a0
-                bsr     line_start
-                bsr     diag_rtc_dump
-                moveq   #8,d2
-                bsr     print_hex
-                bsr     diag_eol
-
-                lea     d_rtcmode,a0
-                lea     RTC_MODE,a2
-                lea     p_rb,a1
-                moveq   #2,d2
-                bsr     diag_line
-
-;--- RTC: can a register be written and read back? --------------------------
-; Bank 1 holds the alarm registers, which are plain storage and do not depend
-; on the oscillator at all.  Select bank 1, write $5 then $A to alarm register
-; 2, and read each back.  Printed as the two readbacks: 5A means the register
-; file and the bus to the chip are both sound, and the fault is the clock
-; itself.  FF or 77 means the chip is not really answering.
-                lea     d_rtcwr,a0
-                bsr     line_start
-                move.b  RTC_MODE,d0
-                and.b   #$0C,d0
-                or.b    #$01,d0                 ; bank 1, keep alarm/timer bits
-                move.b  d0,RTC_MODE
-                nop
-                move.b  #$05,RTC+1+2*2
-                nop
-                move.b  RTC+1+2*2,d1
-                and.l   #$0F,d1
-                lsl.l   #4,d1
-                move.b  #$0A,RTC+1+2*2
-                nop
-                move.b  RTC+1+2*2,d0
-                and.l   #$0F,d0
-                or.l    d1,d0
-                move.l  d0,d6                   ; stash before restoring bank
-                move.b  RTC_MODE,d0
-                and.b   #$0C,d0                 ; back to bank 0
-                move.b  d0,RTC_MODE
-                nop
-                move.l  d6,d0
-                moveq   #2,d2
-                bsr     print_hex
-                bsr     diag_eol
-
-;--- RTC: does it advance? --------------------------------------------------
-; MAME's RP5C15 does tick, but only while the mode register's timer-enable bit
-; is set, and it comes up clear -- which is why this line used to show the time
-; standing still under emulation and was wrongly written up as "MAME never
-; ticks it".  test_rtcosc sets the bit before looking; this diagnostic page
-; deliberately does not, so it shows the chip exactly as the machine left it.
-; On real hardware an unchanged value means the oscillator is stopped.
-                lea     d_rtctick,a0
-                bsr     line_start
-                bsr     diag_rtc_dump
-                moveq   #8,d2
-                bsr     print_hex
-                lea     s_arrow,a0
-                bsr     diag_str
-                moveq   #8,d0
-                bsr     diag_delay
-                bsr     diag_rtc_dump
-                moveq   #8,d2
-                bsr     print_hex
-                bsr     diag_eol
-
-;--- sprite: find where the bus stops answering -----------------------------
-; Probed in address order, read-only first, so the report shows exactly which
-; part of the sprite controller responds.  BUSERR here is the finding: it means
-; nothing drove DTACK, which is also what made the production Sprite RAM test
-; report FAIL rather than a wrong value.
-                lea     d_spctl,a0
-                lea     SPRCTL,a2
-                lea     p_rw,a1
-                moveq   #4,d2
-                bsr     diag_line
-
-                lea     d_spreg,a0
-                lea     $EB0000,a2
-                lea     p_rw,a1
-                moveq   #4,d2
-                bsr     diag_line
-
-                lea     d_sprd,a0
-                lea     SPRRAM,a2
-                lea     p_rw,a1
-                moveq   #4,d2
-                bsr     diag_line
-
-;--- sprite: the same probes again, after sprite_init ------------------------
-; This is the pair that matters.  The production test programs the controller
-; the way MTEST leaves it -- the IPL's timing values, then $EB0808 = $0000 --
-; and on a real PRO it still reports FAIL.  So: probe once cold, run
-; sprite_init, probe again.  If the "after" lines still say BUSERR then the
-; controller is not the gate and the fault is elsewhere; if they return data
-; then sprite_init works and the production test is failing on the pattern
-; rather than on access, which is a completely different problem.
-                bsr     sprite_init
-                nop
-
-                lea     d_sprd2,a0
-                lea     SPRRAM,a2
-                lea     p_rw,a1
-                moveq   #4,d2
-                bsr     diag_line
-
-                lea     d_spwr2,a0
-                bsr     line_start
-                move.l  #$A5A55A5A,d5
-                lea     SPRRAM,a2
-                lea     p_wl,a1
-                bsr     diag_try
-                moveq   #8,d2
-                bsr     diag_val
-                bsr     diag_eol
-
-;--- sprite: now with the plane enabled -------------------------------------
-; video_init writes $0020 to VC R2 for text only, so bit 5 is text and bit 6 is
-; the sprite/BG plane.  $EB0808 is the BG control register.  Both writes are
-; themselves guarded: on a controller that is not answering, the write is what
-; hangs.  VC R2 goes back to text-only before anything is printed so garbage
-; PCG cannot cover the report.
-                lea     d_spwctl,a0
-                bsr     line_start
-                move.w  #$000F,d5
-                lea     SPRREG,a2
-                lea     p_ww,a1
-                bsr     diag_try
-                move.w  #$0060,VC_R2
-                nop
-                moveq   #4,d2
-                bsr     diag_val
-                bsr     diag_eol
-
-                lea     d_spwr,a0
-                bsr     line_start
-                move.l  #$A5A55A5A,d5
-                lea     SPRRAM,a2
-                lea     p_wl,a1
-                bsr     diag_try
-                move.l  d4,d6                   ; stash the write's verdict
-                lea     SPRRAM,a2
-                lea     p_rl,a1
-                bsr     diag_try
-                or.l    d6,d4                   ; BUSERR if either faulted
-                move.w  #$0020,VC_R2            ; text only again, before printing
-                nop
-                moveq   #8,d2
-                bsr     diag_val
-                bsr     diag_eol
-
-;--- main RAM: what exactly stalls? ---------------------------------------------
-; A real PRO hangs in the first sustained write burst of test_dram, at $400, on
-; a cold boot only, while isolated writes to the same memory during sizing work
-; fine.  The CPU is waiting on a DTACK that never arrives -- a bus error would
-; have been caught and reported, and nothing can guard against a cycle that
-; simply never finishes.
-;
-; So the diagnosis has to come from which line is left without a result.  These
-; are ordered least to most likely to hang, so everything before the stall is
-; still information:
-;
-;   read stalls        -> reads are affected too, not just writes
-;   slow fill stalls   -> not about rate, the location itself is bad
-;   $100000 stalls     -> bursts anywhere are the problem, not low memory
-;   only $400 stalls   -> specific to memory nothing had touched until then
-; What actually accumulates during RAM writes?
-;
-; Chunking did not help: with 512-longword slices and a display update between
-; them, a real PRO still stalls on the fourth slice, about 1536 longwords in.
-; So it is not the length of any single burst.  Two things are left untested --
-; whether it is a rate limit, and whether reads reset whatever builds up.
-;
-; Ordered least to most likely to stall, so everything above a hang still
-; counts.  The last line is the known-bad control.
-                lea     d_paced,a0
-                lea     $000400,a2
-                lea     p_paced,a1
-                moveq   #2,d2
-                bsr     diag_line
-
-                lea     d_mixed,a0
-                lea     $000400,a2
-                lea     p_mixed,a1
-                moveq   #2,d2
-                bsr     diag_line
-
-                lea     d_plain,a0
-                lea     $000400,a2
-                lea     p_plain,a1
-                moveq   #2,d2
-                bsr     diag_line
-
-;--- MIDI board -------------------------------------------------------------
-; The production test trusts the YM3802 write-data latch, which is modelled on
-; MAME and unverified on real silicon.  These two lines are what settles that:
-; if the raw read answers but the latch line does not come back $5AA5, the
-; latch is the thing that is wrong, not the board.
-                lea     d_midiraw,a0
-                lea     p_rb,a1
-                lea     MIDI+1,a2
-                moveq   #2,d2
-                bsr     diag_line
-
-                lea     d_midiwdr,a0
-                lea     p_midi_wdr,a1
-                lea     MIDI+1,a2
-                moveq   #4,d2
-                bsr     diag_line
-
-                bsr     diag_eol
-                lea     s_diagend,a0
-                bsr     diag_str
-                bsr     diag_eol
-                moveq   #20,d0
-                bsr     delay_seconds
-                movem.l (sp)+,d0-d7/a0-a4
-                rts
-
-;=============================================================================
-; diagnostic plumbing
-;=============================================================================
-;--- diag_line: a0 = name, a1 = probe, a2 = address, d2 = digits ------------
-diag_line:
-                bsr     line_start
-                bsr     diag_try
-                bsr     diag_val
-                bsr     diag_eol
-                rts
-
-;--- diag_try: a1 = probe, a2 = address, d5 = value for the write probes -----
-; out: d0 = result, d4 = 0 completed / 1 bus error.  Installs the same recovery
-; run_test uses; without it a probe that nothing answers takes the machine down.
-diag_try:
-                movem.l a3-a4,-(sp)
-                moveq   #0,d4
-                lea     .fault,a3
-                move.l  a7,a4
-                jsr     (a1)
-                bra.s   .done
-.fault:
-                moveq   #1,d4
-                moveq   #0,d0
-.done:
-                movem.l (sp)+,a3-a4
-                rts
-
-;--- diag_val: print d0 as d2 hex digits, or BUSERR if d4 is set ------------
-diag_val:
-                tst.l   d4
-                bne.s   .err
-                bra     print_hex
-.err:           lea     s_buserr,a0
-                bra     diag_str
-
-;--- probes: a2 = address, d5 = value to write ------------------------------
-p_rb:           moveq   #0,d0
-                move.b  (a2),d0
-                rts
-p_rw:           moveq   #0,d0
-                move.w  (a2),d0
-                rts
-p_rl:           move.l  (a2),d0
-                rts
-p_ww:           move.w  d5,(a2)
-                moveq   #0,d0
-                move.w  (a2),d0
-                rts
-p_wl:           move.l  d5,(a2)
-                move.l  (a2),d0
-                rts
-; Write two different bytes to YM3802 register 0 and read each back out of the
-; write-data latch at register 3.  Healthy board: $5AA5.  Floating bus: $FFFF.
-; Register 0 is the write target because it has no side effects.
-; 8K of RAM, three ways.  a2 = base.
-p_fill8k:       movem.l d1/a0,-(sp)
-                move.l  a2,a0
-                move.l  #$800,d1
-                bsr     mem_fill
-                movem.l (sp)+,d1/a0
-                moveq   #0,d0
-                rts
-
-; d5 = how many longwords to write, a2 = where.  dbra counts in words, which is
-; ample for the range being bisected.
-; 4096 longwords in eight runs of 512, with a whole video frame of idle between
-; runs.  If this completes where a straight 2048 hangs, the limit is a rate and
-; the cure is pacing.
-p_paced:        movem.l d1-d3/a0,-(sp)
-                move.l  a2,a0
-                moveq   #7,d3
-.chunk:
-                move.w  #511,d1
-.wr:            move.l  a0,d0
-                move.l  d0,(a0)+
-                dbra    d1,.wr
-                moveq   #1,d0
-                bsr     wait_frames
-                dbra    d3,.chunk
-                movem.l (sp)+,d1-d3/a0
-                moveq   #0,d0
-                rts
-
-; 2048 longwords, reading each one back immediately after writing it.  If this
-; completes, a read resets whatever the writes build up.
-p_mixed:        movem.l d1-d2/a0,-(sp)
-                move.l  a2,a0
-                move.w  #2047,d1
-.loop:          move.l  a0,d0
-                move.l  d0,(a0)
-                move.l  (a0)+,d2
-                dbra    d1,.loop
-                movem.l (sp)+,d1-d2/a0
-                moveq   #0,d0
-                rts
-
-; 2048 straight writes -- the case known to hang, kept as the control.
-p_plain:        movem.l d1/a0,-(sp)
-                move.l  a2,a0
-                move.w  #2047,d1
-.loop:          move.l  a0,d0
-                move.l  d0,(a0)+
-                dbra    d1,.loop
-                movem.l (sp)+,d1/a0
-                moveq   #0,d0
-                rts
-
-; d5 = the R20 value to try, a2 = the address to read.  R20 is restored by the
-; caller, because a faulting read never comes back here.
-p_sprmode:      movem.l d1,-(sp)
-                move.w  d5,CRTC+$28
-                nop
-                nop
-                moveq   #0,d0
-                move.w  (a2),d0
-                movem.l (sp)+,d1
-                rts
-
-p_wrn:          movem.l d1/a0,-(sp)
-                move.l  a2,a0
-                move.w  d5,d1
-                subq.w  #1,d1
-.loop:          move.l  a0,d0
-                move.l  d0,(a0)+
-                dbra    d1,.loop
-                movem.l (sp)+,d1/a0
-                moveq   #0,d0
-                rts
-
-; Read the block through first, then write it.  Reads of this same range
-; complete, and a read refreshes the DRAM row it touches -- so if the array
-; simply has not been primed since power-on, this is the probe that says so.
-p_readwrite:    movem.l d1/a0,-(sp)
-                move.l  a2,a0
-                move.w  #$7FF,d1
-                moveq   #0,d0
-.rloop:         add.l   (a0)+,d0
-                dbra    d1,.rloop
-                move.l  a2,a0
-                move.w  #$7FF,d1
-.wloop:         move.l  a0,d0
-                move.l  d0,(a0)+
-                dbra    d1,.wloop
-                movem.l (sp)+,d1/a0
-                moveq   #0,d0
-                rts
-
-; Wait a couple of seconds and then write, in case it is elapsed time rather
-; than any particular access that the array needs.
-p_delaywrite:   movem.l d1/a0,-(sp)
-                moveq   #120,d0
-                bsr     wait_frames
-                move.l  a2,a0
-                move.w  #$7FF,d1
-.wloop:         move.l  a0,d0
-                move.l  d0,(a0)+
-                dbra    d1,.wloop
-                movem.l (sp)+,d1/a0
-                moveq   #0,d0
-                rts
-
-; The same thing with the loop deliberately slowed, to separate a rate problem
-; from a bad location.
-p_slow8k:       movem.l d1/a0,-(sp)
-                move.l  a2,a0
-                move.w  #$7FF,d1
-.loop:          move.l  a0,d0
-                move.l  d0,(a0)+
-                nop
-                nop
-                nop
-                nop
-                dbra    d1,.loop
-                movem.l (sp)+,d1/a0
-                moveq   #0,d0
-                rts
-
-; Read-only sweep, in case it is not writes at all.
-p_read8k:       movem.l d1/a0,-(sp)
-                move.l  a2,a0
-                move.w  #$7FF,d1
-                moveq   #0,d0
-.loop:          add.l   (a0)+,d0
-                dbra    d1,.loop
-                movem.l (sp)+,d1/a0
-                rts
-
-p_midi_wdr:     move.b  #$5A,MIDI+1
-                nop
-                moveq   #0,d0
-                move.b  MIDI_WDR,d0
-                lsl.w   #8,d0
-                move.b  #$A5,MIDI+1
-                nop
-                or.b    MIDI_WDR,d0
-                rts
-
-;--- diag_gpip: hammer the MFP GPIP, out d0 = (OR << 8) | AND ---------------
-; Bits that are set in OR and clear in AND changed during the sample window.
-diag_gpip:
-                movem.l d1-d3,-(sp)
-                moveq   #0,d1                   ; OR accumulator
-                moveq   #-1,d2                  ; AND accumulator
-                move.l  #200000,d3
-.loop:          moveq   #0,d0
-                move.b  MFP_GPIP,d0
-                or.l    d0,d1
-                and.l   d0,d2
-                subq.l  #1,d3
-                bne.s   .loop
-                and.l   #$FF,d1
-                lsl.l   #8,d1
-                and.l   #$FF,d2
-                or.l    d2,d1
-                move.l  d1,d0
-                movem.l (sp)+,d1-d3
-                rts
-
-;--- diag_rtc_dump: out d0 = RTC registers 7..0, low nibble of each ---------
-diag_rtc_dump:
-                movem.l d1-d2,-(sp)
-                moveq   #0,d0
-                moveq   #7,d2
-                lea     RTC+1+7*2,a0
-.loop:          lsl.l   #4,d0
-                moveq   #0,d1
-                move.b  (a0),d1
-                and.l   #$0F,d1
-                or.l    d1,d0
-                lea     -2(a0),a0
-                dbra    d2,.loop
-                movem.l (sp)+,d1-d2
-                rts
-
-;--- diag_delay: d0 = rough seconds, with no keypress escape ----------------
-; delay_seconds returns the moment the MFP has a byte latched, which under MAME
-; is immediately, making the before/after RTC pair meaningless.
-diag_delay:
-                movem.l d0-d2,-(sp)
-                move.l  d0,d2
-                beq.s   .out
-.second:
-                move.w  #$FFFF,d0
-.outer:
-                move.w  #6,d1
-.inner:         nop
-                dbra    d1,.inner
-                dbra    d0,.outer
-                subq.l  #1,d2
-                bne.s   .second
-.out:           movem.l (sp)+,d0-d2
-                rts
-
-                even
-s_diag:         dc.b    'DIAGNOSTICS v2  (raw values)',0
-s_diagend:      dc.b    'END OF DIAGNOSTICS',0
-s_arrow:        dc.b    ' -> ',0
-s_buserr:       dc.b    'BUSERR',0
-d_canary1:      dc.b    'ADDRERR canary (must fail)',0
-d_canary2:      dc.b    'BUSERR canary $EC0000',0
-d_gpip:         dc.b    'MFP GPIP or:and',0
-d_gptog:        dc.b    'MFP GPIP bits moving',0
-d_crtc0:        dc.b    'CRTC R00 raw',0
-d_crtc4:        dc.b    'CRTC R04 raw',0
-d_crtc20:       dc.b    'CRTC R20 raw',0
-d_vcr2:         dc.b    'VC R2 raw',0
-d_adpcm:        dc.b    'ADPCM stat',0
-d_rtcbank:      dc.b    'RTC regs 7..0',0
-d_rtcmode:      dc.b    'RTC mode reg',0
-d_rtcwr:        dc.b    'RTC bank1 wr 5 then A',0
-d_rtctick:      dc.b    'RTC regs after wait',0
-d_spctl:        dc.b    'SPR read $EB0800',0
-d_spreg:        dc.b    'SPR read $EB0000',0
-d_sprd:         dc.b    'SPR read $EB8000',0
-d_spwctl:       dc.b    'SPR write $EB0808',0
-d_spwr:         dc.b    'SPR write $EB8000',0
-d_sprd2:        dc.b    'SPR read $EB8000 after init',0
-d_spwr2:        dc.b    'SPR write $EB8000 after init',0
-d_paced:        dc.b    'RAM 4096 paced by frame',0
-d_mixed:        dc.b    'RAM 2048 write+read each',0
-d_plain:        dc.b    'RAM 2048 straight writes',0
-d_drw:          dc.b    'RAM read then write $400',0
-d_ddelay:       dc.b    'RAM delay then write $400',0
-d_dslow:        dc.b    'RAM slow fill $400',0
-d_dhigh:        dc.b    'RAM burst fill $100000',0
-d_dlow:         dc.b    'RAM burst fill $400',0
-d_midiraw:      dc.b    'MIDI reg0 raw',0
-d_midiwdr:      dc.b    'MIDI WDR wr 5A then A5',0
-
-                endif
 
 ;=============================================================================
 ; data
 ;=============================================================================
                 even
-s_banner:       dc.b    'SHARP X68000  POST  v0.35',0
+s_banner:       dc.b    'SHARP X68000  POST  v0.36',0
 s_ok:           dc.b    'OK',0
 s_fail:         dc.b    'FAIL',0
 s_skip:         dc.b    'SKIP',0
@@ -2686,7 +1913,6 @@ n_dmac:         dc.b    'DMAC HD63450',0
 n_opm:          dc.b    'OPM YM2151',0
 n_fdc:          dc.b    'FDC uPD72065',0
 n_scsi:         dc.b    'SCSI MB89352',0        ; optional: not on Ace/Pro/EXPERT
-n_midi:         dc.b    'MIDI',0                ; optional: expansion card
 n_ppi:          dc.b    'PPI i8255',0
 n_sprram:       dc.b    'Sprite RAM',0
 

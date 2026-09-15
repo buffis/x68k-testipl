@@ -10,7 +10,6 @@
 #
 # Set RAM to test a different machine size, e.g.  RAM=2m ./run-mame.sh screen
 # (RAM is a slot device in current MAME: -ram 4m, not -ramsize 4M.)
-# Set BUILD=../build-diag to run the diagnostic variant.
 #
 # One image serves every model; this drives the Compact profile because that is
 # what MAME's x68kxvi/ipl12 wants the file called.  Use tryall.sh for the rest.

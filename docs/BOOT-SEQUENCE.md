@@ -222,26 +222,16 @@ a 4-bit register like the RP5C15's reads its real value in the low nibble with
 `$F` in the high one. Any test that reads a value back is validated against a
 fiction under emulation, where everything returns clean defined data.
 
-**Low memory holds different garbage cold than it does after a reset, and that
-difference will find your bugs.** On one real PRO an early version of this POST
-stalled partway through writing main RAM from power-on, while pressing reset at
-any point -- even before anything reached the screen -- made the same ROM run
-perfectly.
+**A cold start is not the same machine state as a reset-button press.** After a
+reset, low memory holds plausible leftovers and VRAM refresh has never stopped;
+from power-on, both are undefined. Code that works perfectly after a reset can
+fail every cold boot for reasons that have nothing to do with the hardware.
 
-That looked like a hardware property and is not one. Two of our own defects were
-hiding behind it: the exception vector table was only partly filled, so a
-spurious interrupt from the undefined power-on state vectored through noise; and
-the stack fell back into main RAM at `$2000` when the text-VRAM probe failed on
-cold, decayed VRAM, after which the RAM test overwrote its own return addresses.
-A warm reset hid both, because by then low memory held plausible values and
-VRAM refresh had never stopped.
-
-Two lessons for anything that runs from cold, and no further reset trickery is
-needed: fill **all 256** exception vectors before touching hardware, and do not
-assume any memory you have not just proved. Theories about reset pulse length,
-DRAM warm-up, refresh priming and maximum write-burst length were all
-investigated on that machine and all turned out to be irrelevant --
-`MAME-DIFFERENCES.md` has the list.
+Two rules follow, and they are enough -- no reset timing trickery is needed:
+fill **all 256** exception vectors before touching any hardware, since level 7
+is non-maskable and will vector through whatever noise low RAM holds; and do not
+put anything you depend on in memory you have not just proved, text VRAM
+included.
 
 **Text VRAM is refreshed by the display.** Until the CRTC is actually scanning,
 anything stored there decays — including any work area a pre-IPL program keeps

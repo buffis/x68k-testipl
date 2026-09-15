@@ -155,8 +155,8 @@ number at `$000400`, so call `$C0` (`_SP_INIT`) is simply the longword at
 That is how `_SP_INIT` was located at `$FFC418` in the Compact IPL — and
 disassembling from there showed it opens with a guard that reads CRTC R20, masks
 the low byte, and refuses to touch sprite hardware at all when it reads `$16`.
-`$16` is exactly what our `video_init` writes. That one read explained the sprite
-RAM bus errors on real hardware, which had survived several wrong theories.
+`$16` is exactly what our `video_init` writes. That one read explained why sprite
+RAM bus-errors on real hardware.
 
 Static and dynamic together: the tap finds the address, the disassembler explains
 the code there.

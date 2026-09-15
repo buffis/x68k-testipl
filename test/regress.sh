@@ -8,7 +8,7 @@
 # complete.
 #
 # There is no "boots identically to the stock ROM" check any more: this ROM is
-# a diagnostic that halts when it is done and deliberately boots nothing.
+# a self test that halts when it is done and deliberately boots nothing.
 set -e
 cd "$(dirname "$0")"
 
@@ -116,15 +116,6 @@ mkrom roms_sprfault build_sprfault/ipl_post.dat
 printf '  faulting sprite test  '
 run roms_sprfault 2m screen.lua 60 | grep -E 'Sprite RAM' | tr -s ' ' | tr '\n' ' '; echo
 rm -rf roms_sprfault build_sprfault /tmp/sprfault.s
-
-echo
-echo "=== optional hardware is detected, not guessed ==="
-printf '  MIDI absent           '
-run roms 4m screen.lua 40 | grep -E 'MIDI' | tr -s ' ' | tr '\n' ' '; echo
-printf '  MIDI fitted           '
-mame x68kxvi -rompath roms -bios ipl12 -ram 4m -exp1 x68k_midi -video none -sound none \
-  -window -nomaximize -nothrottle -seconds_to_run 40 -autoboot_script screen.lua \
-  -autoboot_delay 0 2>&1 | grep -E 'MIDI' | tr -s ' ' | tr '\n' ' '; echo
 
 
 echo

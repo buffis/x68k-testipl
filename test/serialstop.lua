@@ -1,9 +1,8 @@
--- Capture the whole RS-232C byte stream for a DIAG build.
+-- Capture the whole RS-232C byte stream, dumping at machine stop rather than
+-- on cursor settle -- which is what an injected build needs, since the IPL takes
+-- the screen over and the cursor never settles.
 --
--- serialcap.lua dumps as soon as the summary line appears, which on a
--- diagnostic build is the wrong moment: the diag section clears the screen and
--- restarts the row counter, so the trigger fires halfway through.  This just
--- taps channel A and dumps everything when the run ends.
+-- This just taps channel A and dumps everything when the run ends.
 local mem = manager.machine.devices[":maincpu"].spaces["program"]
 local out = {}
 _G.tap = mem:install_write_tap(0xe98006, 0xe98007, "scc_tx", function (offset, data, mask)

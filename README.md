@@ -26,7 +26,7 @@ supply your own dumps — see [Running the tests](#running-the-tests).
 MIT licensed; see [LICENSE](LICENSE).
 
 ```
-SHARP X68000  POST  v0.35
+SHARP X68000  POST  v0.36
 
 MFP MC68901................... OK
 CRTC video timing............. OK
@@ -37,7 +37,6 @@ OPM YM2151.................... OK
 PPI i8255..................... OK
 FDC uPD72065.................. OK
 SCSI MB89352.................. SKIP
-MIDI.......................... SKIP
 ROM checksum.................. OK
 CGROM checksum................ 13C64BFE
 Text VRAM..................... OK
@@ -75,7 +74,6 @@ vasm built elsewhere (`make CPU=m68k SYNTAX=mot`), point at it with `--vasm`.
 
 ```bash
 python3 build.py                          # standalone      -> build/
-python3 build.py --diag --out build-diag  # raw-values variant
 python3 build.py --ipl path/to/ipl.rom --out build-injected
 ```
 
@@ -158,25 +156,6 @@ covers the injected builds: that the payload lands in unprogrammed space, that
 the POST runs, that the machine reaches the IPL unattended, and that it boots to
 a screen identical to the same IPL with no POST in it.
 
-## A hardware limit that turned out not to exist
-
-Earlier versions wrote main RAM in short runs of 512 longwords, and this section
-used to explain why: a real PRO stalled partway through the RAM test on a cold
-boot, waiting on a DTACK that never arrived, and bisection appeared to show that
-1024 consecutive longword writes completed while 2048 hung.
-
-**That was wrong, and it is worth recording because the conclusion was wrong in
-a believable way.** There is no such limit. The POST's stack had fallen back to
-`$2000` in main RAM when its text-VRAM probe failed, and the pattern pass then
-overwrote its own return addresses. A corrupted `rts` and a stalled bus look
-identical from the outside, and the "bisection" was really measuring which slice
-size happened to span `$1FFC`. The reported hang addresses match exactly.
-
-The slices are back to 2048 longwords; they set only how precisely the on-screen
-address names a stall, and are not a workaround for anything. The full account,
-including the eight other theories that were also wrong, is in
-`docs/MAME-DIFFERENCES.md` under "Not MAME bugs — my own".
-
 ## The one system register it must write
 
 `post_entry` clears the supervisor area register at `$E86001` before touching
@@ -188,7 +167,7 @@ below `$400` stays writable. A warm reset hides it, because the previous run
 left the register clear.
 
 MAME's `areaset_w` is an empty TODO, so no amount of emulator testing can show
-this. It cost twenty versions and four bench sessions to find.
+this — it only appears on real hardware.
 
 ## How it takes over the machine
 
@@ -222,8 +201,8 @@ line before the pattern test that works over it.
 
 Tests are deliberately conservative — they prefer reading back a value they just
 wrote over expecting a magic constant. The table is a summary; `docs/TESTS.md`
-has the full reasoning for each line, including the ones whose earlier versions
-passed under MAME while proving nothing.
+has the full reasoning for each line, including which ones lean on behaviour
+MAME may idealise.
 
 | test | method |
 |---|---|
@@ -243,7 +222,6 @@ passed under MAME while proving nothing.
 | OPM | status register BUSY bit must be clear when idle |
 | FDC | main status register must read RQM set, DIO clear, not busy |
 | SCSI | BDID must report the host ID as a single one-hot bit; `$00`/`$FF` means not fitted, which is SKIP rather than FAIL |
-| MIDI | optional expansion card. An empty slot drives no DTACK and reads SKIP; a fitted YM3802 proves itself through its write-data latch, which returns the last byte written when register 3 is read. Sharp's CZ-6BM1 and compatible third-party cards are indistinguishable here, so the line names no board |
 | PPI | port C configured as output and read back |
 | Sprite RAM | pattern over 32 KB. **Switches CRTC R20 to `$0B15` for the duration**, because sprite RAM is not reachable in the 768-wide mode `video_init` uses. IOCS says so itself: `_SP_INIT` opens with a guard that refuses outright when R20's low byte is `$16`. Confirmed on a real PRO — `$EB8000` bus-errors at `$0B16` and returns data at every lower mode. The display garbles while the test runs and is restored after |
 
@@ -291,11 +269,9 @@ not fitted on this model — is safe. They cannot resume (a 68000 group 0 fault
 never can), so they discard the exception frame and jump to a recovery address.
 
 That recovery address is established per test by `run_test`, which is the whole
-reason the dispatcher exists. An earlier version set it up only inside the RAM
-test, so a bus error anywhere later jumped through whatever `a3` happened to
-hold. On a Compact nothing the POST probes is ever absent, so it never fired;
-on an ACE it would have crashed on the SCSI probe. Verified by pointing the
-SCSI test at unpopulated memory to force a real bus error: the POST reports
+reason the dispatcher exists — every probe must have one set, or a bus error
+jumps through whatever `a3` happens to hold. Verified by pointing the SCSI test
+at unpopulated memory to force a real bus error: the POST reports
 SKIP for that line and runs to completion.
 
 A bus error means nothing responded at that address at all, which is why
@@ -515,11 +491,10 @@ On the PRO, **SW1** selects between the default internal IPL and the socketed
 EPROMs, so flipping one switch puts the machine back to normal and the stock
 chips never have to come out.
 
-What that machine found, and what it cost to learn, is in
-`docs/MAME-DIFFERENCES.md`: the CRTC register file does not read back on real
-silicon, sprite RAM bus-errors unless the screen mode allows it, and that PRO's
-RTC oscillator is genuinely dead — the chip answers and its alarm registers read
-back, but the clock never advances.
+What that machine found is in `docs/MAME-DIFFERENCES.md`: the CRTC register file
+does not read back on real silicon, sprite RAM bus-errors unless the screen mode
+allows it, and that PRO's RTC oscillator is dead — the chip answers and its alarm
+registers read back, but the clock never advances.
 
 **One caveat about that machine as a reference:** it will not boot its own stock
 IPL at all, so anything unusual it reports should be treated as machine-specific

@@ -41,11 +41,11 @@ for spec in "exbios:exbios/exbios_v1.34.24_220429.rom:x68000:ipl10:iplrom.dat" \
       | grep -viE 'wrong|expected:|found:|warning|iplrom|average|checksum problem'
   }
 
-  # The report is transient now -- the IPL clears the screen on its way to
-  # booting -- so capture it from the serial tap, which dumps at machine stop
-  # rather than waiting for the cursor to settle.
+  # The report is transient -- the IPL clears the screen on its way to booting --
+  # so capture it from the serial tap, which dumps at machine stop rather than
+  # waiting for the cursor to settle.
   printf '  POST runs             '
-  run diagcap.lua 60 | grep -E 'PASSED|TEST\(S\) FAILED' | tr '\n' ' '; echo
+  run serialstop.lua 60 | grep -E 'PASSED|TEST\(S\) FAILED' | tr '\n' ' '; echo
   printf '  boots through         '
   run bootthru.lua 90 | grep -E 'BOOTED THROUGH' | tr '\n' ' '; echo
 

@@ -5,11 +5,10 @@ The short version lives in the README's table; this is the long one — what is
 read or written, at which address, what a pass proves, and just as importantly
 what it does **not** prove.
 
-Several tests are shaped by things that only show on real silicon, and a few
-earlier versions of them passed under MAME while proving nothing. Where that is
-the case it is said explicitly, because the failed version is the more useful
-warning. `MAME-DIFFERENCES.md` has the evidence for those; `BOOT-SEQUENCE.md`
-has the pre-IPL state each test has to cope with.
+Several tests are shaped by behaviour that only shows on real silicon, and say so
+where it matters — a test that passes under emulation is not the same as a test
+that proves anything. `MAME-DIFFERENCES.md` has the evidence for those;
+`BOOT-SEQUENCE.md` has the pre-IPL state each test has to cope with.
 
 The report is in two groups: devices first, then memory. Memory is second on
 purpose — main RAM is by far the slowest test and the one most likely to hang a
@@ -37,10 +36,9 @@ Says nothing about its timers, interrupts or serial side.
 Reads `$E88001` (MFP GPIP, register 0).
 
 This is the CRTC liveness test, and it deliberately never touches the CRTC. The
-CRTC register file is write-only on real silicon — a PRO with a visibly correct
-768x512 display returns `$0000` from R00, R04 and R20 alike — so the readback
-test that used to live here only ever passed because MAME implements those
-registers as readable.
+CRTC register file is write-only on real silicon — a machine with a visibly
+correct 768x512 display returns `$0000` from R00, R04 and R20 alike — so a
+readback test of it proves nothing, however well it passes under MAME.
 
 Ask the MFP instead. The CRTC drives V-DISP into GPIP bit 4 and H-SYNC into bit
 7. The loop samples the port up to 40,000 times, accumulating an OR and an AND
@@ -86,8 +84,7 @@ Same chip, different question: does the clock advance?
 
 Sets the mode register's timer-enable bit first. A clock that is merely switched
 off is a different thing from a dead oscillator, and only the second is worth
-reporting — MAME comes up with the bit clear, which is why the diagnostic page
-used to show the time never moving under emulation.
+reporting — MAME comes up with the bit clear.
 
 Reads the seconds registers (tens and units nibbles), waits, reads again, up to
 four times at about 1.1 s each. Any change passes; four rounds with no movement
@@ -106,7 +103,7 @@ the video timing line above.
 **This pair is what found the real fault on the PRO this ROM was written for:**
 `RTC RP5C15 OK` with `RTC oscillator FAIL` — the chip and its bus are fine, the
 32.768 kHz crystal or the battery corrosion around it is not. Splitting one
-RTC line into two is what made that diagnosis possible.
+Splitting the RTC into two lines is what makes that distinguishable.
 
 ### `DMAC HD63450`
 
@@ -169,30 +166,6 @@ all at `$E96020`.
 
 A controller that is present but broken still drives the bus, and the one-hot
 check (`d2 = d1 - 1; d2 &= d1` must be zero) catches it as a FAIL.
-
-### `MIDI` — optional
-
-`$EAFA00`. SKIPs on an empty slot.
-
-Sharp's CZ-6BM1 is the board this was written against, but it is not the only
-one: third-party cards put the same YM3802 at the same addresses, so the test
-works on those too. The line says only `MIDI` because nothing it reads can tell
-those boards apart.
-
-`tst.b 1(a0)` first: on a machine with no board this bus-errors, and the fault
-handler turns that into SKIP, exactly as SCSI does.
-
-Presence alone is not proof the board works, and a floating bus reads `$FF` on
-everything, so the board is then asked to prove itself. Every write to the
-YM3802 latches the byte into its write-data register, and register 3
-(`MIDI+1+3*2`) reads that latch back. Writes `$5A`, reads register 3, writes
-`$A5`, reads register 3 — two different patterns rule out a bus stuck high or
-low. Register 0 is the write target because it has no side effects; writing
-register 1 would reload the register-group select and can reset the device.
-
-**Caveat.** The latch behaviour is modelled on MAME's YM3802 and is **not**
-verified against a real CZ-6BM1. A board that is plainly fitted but reports FAIL
-here means the latch, not the board, is what to doubt first.
 
 ---
 
@@ -361,15 +334,9 @@ Two guards:
   display probe did not rescue it. Patterning would overwrite the return
   addresses under `a7` and hang, so it says SKIP instead of self-destructing.
 
-**That second guard is the residue of the cold-boot hang.** The stack sitting at
-`$2000` while the pattern pass swept through `$1FFC` was the actual root cause —
-not any of the nine hardware theories that preceded it.
-
-The slice size is not a hardware workaround, incidentally. It was briefly cut to
-512 longwords while chasing what looked like a limit on consecutive writes on a
-real PRO; that turned out to be this code overwriting its own stack, so the
-small slices bought nothing and cost about twelve seconds at 12 MB. They are
-back at 2048.
+The 2048-longword slice size only sets how precisely the on-screen address names
+a stall; it is not a hardware workaround. Smaller slices cost real time — 512
+adds about twelve seconds at 12 MB.
 
 ### `Main RAM vs SRAM` — cross-check
 

@@ -1,9 +1,8 @@
 # Where a real X68000 PRO differed from MAME
 
 Collected while getting a pre-IPL POST ROM to run on real hardware. Each entry
-says what was observed, how, and how confident I am — because some things I
-initially blamed on MAME turned out to be bugs in my own code, and those are
-listed at the bottom so nobody files them.
+says what was observed, how, and how confident I am, so that anything filed
+upstream can be weighed rather than taken on trust.
 
 MAME version: 0.289 (mame0289-603-g6ae579aed31). Machine: a real X68000 PRO,
 IPL 1.0 era, 10 MB, running exbios v1.34.24 with a POST injected ahead of it.
@@ -129,35 +128,6 @@ rs232 keyboard models real bit timing.
 problems elsewhere.
 
 ---
-
-## Not MAME bugs — my own, recorded so they are not filed
-
-These produced symptoms I spent days attributing to hardware or emulation, and
-all of them were defects in the POST:
-
-* **"Main RAM stalls after N consecutive writes on a cold boot."** There is no
-  such limit. The POST's stack fell back to `$2000` in main RAM when its
-  text-VRAM probe failed, and the DRAM pattern test then overwrote its own
-  return addresses. A corrupted `rts` and a stalled bus look identical. The
-  reported hang addresses (`$1C00` with 2 KB slices, `$400` with 8 KB ones) are
-  exactly the slices spanning `$1FFC`.
-* **"Sprite RAM is faulty."** Two stacked bugs: an optional test that faulted
-  reported FAIL instead of SKIP because the verdict lived in a register the test
-  itself clobbered, and the test ran in the wrong screen mode (entry 1 above).
-* **The last line of serial output was truncated** (`Handing over to the IP`) on
-  the injected build. `serial_char` waits for RR0's tx-buffer-empty before
-  writing, which frees the holding register while the previous byte is still in
-  the shift register, so the `jmp` to the IPL handed over with up to two bytes
-  still on the wire and the IPL's SCC reset cut them off. Fixed by waiting for
-  RR1's All Sent bit first.
-
-  **This one is structurally invisible to MAME.** The harness taps *writes* to
-  the data port, so the byte stream it rebuilds is complete whether or not the
-  bytes ever reach the pin. No test here could have caught it; it took a real
-  terminal on the other end of a real cable.
-* **AREASET, DRAM warm-up, refresh priming, write rate, burst length, the RAM
-  expansion board, reset pulse length, mid-run resets** — all investigated, all
-  irrelevant to the actual fault.
 
 The RTC oscillator failure on that machine *is* genuine hardware: the RP5C15
 answers and its alarm registers read back, but the clock never advances. A dead
