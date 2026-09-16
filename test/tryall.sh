@@ -1,15 +1,13 @@
 #!/bin/sh
 # Run the standalone TEST-IPL on every model MAME emulates.
 #
-# There is one ROM image for all of them: it owns the machine from reset and
-# boots nothing, so there is no stock IPL to fit around and nothing that varies
-# by model.  MAME just wants the image under the filename each machine's
-# BIOS expects.
+# One ROM image serves all of them: it owns the machine from reset and boots
+# nothing, so nothing varies by model.  MAME just wants the image under the
+# filename each machine's BIOS expects.
 cd "$(dirname "$0")"
 
-# MAME's -video none still creates a window: renderer_none attaches to an
-# osd_window and window_init runs unconditionally, so a real window appears and
-# takes focus.  SDL's dummy video driver stops it reaching the display at all.
+# -video none still creates a window: renderer_none attaches to an osd_window
+# and window_init runs unconditionally.  SDL's dummy driver stops that.
 export SDL_VIDEODRIVER=dummy
 STOCK=../../x68kxvi
 ROM=${ROM:-../build/testipl.dat}
@@ -26,12 +24,10 @@ for spec in "xvi:x68kxvi:ipl11:iplromxv.dat" \
   # MAME's x68030 set wants an scsiinrom.dat we do not have; a stand-in only
   # has to satisfy the loader, since our ROM never calls into it.
   [ $mach = x68030 ] && cp $STOCK/scsiinco.bin $d/tmp/scsiinrom.dat
-  # A stock rompath as well as ours.  Booting the stock ROM once initialises
-  # SRAM: MAME starts with blank NVRAM, which is a flat backup battery as far as
-  # the signature test is concerned, and our ROM never writes SRAM because it
-  # boots nothing.  Each machine keeps its own NVRAM, so each needs its own
-  # warm-up -- without this, models nothing else happens to have booted report a
-  # spurious SRAM signature FAIL.
+  # A stock rompath as well as ours, to initialise SRAM: MAME starts with blank
+  # NVRAM, which the signature test correctly reads as a flat backup battery,
+  # and our ROM never writes SRAM.  NVRAM is per-machine, so each model needs
+  # its own warm-up or it reports a spurious SRAM signature FAIL.
   rm -rf ${d}_stock; mkdir -p ${d}_stock
   cp $d/tmp/* ${d}_stock/ 2>/dev/null
   (cd ${d}_stock && zip -q -j ./$mach.zip ./* && rm -f ./*.dat ./*.bin ./*.ic11 ./*.ic12)

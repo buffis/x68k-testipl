@@ -2,18 +2,16 @@
 """
 Build the X68000 TEST-IPL ROM.
 
-Two modes:
-
   standalone (default)
       Pads the assembled TEST-IPL into a complete 128K image with the reset
-      vector pointing at it.  It tests the machine, reports, and offers a rerun; it
-      boots nothing, so the output contains only code from x68testipl.s.
+      vector pointing at it.  It boots nothing, so the output contains only
+      code from x68testipl.s.
 
   injected (--ipl FILE)
       Puts TEST-IPL into the unprogrammed space of an existing 128K IPL image,
       repoints the reset vector at it, and hands over to that IPL's original
-      entry point when the tests are done.  Any IPL image works -- stock Sharp,
-      exbios, anything else -- so long as it is 128K with a sane reset vector.
+      entry point when the tests are done.  Any 128K IPL with a sane reset
+      vector works -- stock Sharp, exbios, anything else.
 
 Either way it fills in the ROM self-check checksum and emits the 128K image
 plus the even/odd halves for a pair of 27C512-class EPROMs.
@@ -35,22 +33,8 @@ RESET_PC_ADDR = 0xFF0004   # ...and its reset PC from here
 TESTIPL_BASE = 0xFF0010    # code starts just past the two reset longwords
 STACK_TOP = 0xE7FF00       # initial SSP; TEST-IPL re-derives its own anyway
 FILL = 0xFF                # unprogrammed EPROM
-
-ROMSUM_OFF = 4  # offset within the TEST-IPL payload of the checksum field
-                # (see the header comment in x68testipl.s)
-
-# Test-harness metadata only -- the ROM image itself is model independent.
-# MAME wants our image under the filename that machine's BIOS expects.
-MODELS = {
-    "compact": dict(ipl="iplromco.dat", machine="x68kxvi", bios="ipl12",
-                    desc="X68000 Compact / XVI Compact"),
-    "xvi":     dict(ipl="iplromxv.dat", machine="x68kxvi", bios="ipl11",
-                    desc="X68000 SUPER / XVI"),
-    "ace":     dict(ipl="iplrom.dat",   machine="x68000", bios="ipl10",
-                    desc="X68000 / ACE / EXPERT / PRO"),
-    "x68030":  dict(ipl="iplrom30.dat", machine="x68030", bios="ipl13",
-                    desc="X68030"),
-}
+ROMSUM_OFF = 4             # checksum field within the payload (see the header
+                           # comment in x68testipl.s)
 
 
 def u32(b, off):
@@ -62,8 +46,8 @@ def put32(b, off, v):
 
 
 def sum32(data, skip=None):
-    """Sum of big-endian longwords, mod 2^32.  `skip` is a byte offset of one
-    longword to leave out (the field holding the expected value itself)."""
+    """Sum of big-endian longwords, mod 2^32.  `skip` is the byte offset of one
+    longword to leave out: the field holding the expected value itself."""
     total = 0
     for off in range(0, len(data), 4):
         if skip is not None and off == skip:
@@ -75,8 +59,8 @@ def sum32(data, skip=None):
 def find_free(ipl):
     """Largest run of a single fill byte ($00 or $FF) in a 128K IPL image, as a
     longword-aligned address.  The reset vector is excluded: on some images the
-    SSP's leading zero bytes sit at the end of a long blank run and would
-    otherwise be handed back as free space."""
+    SSP's leading zero bytes end a long blank run and would otherwise be handed
+    back as free space."""
     vec = RESET_SSP_ADDR - IPL_BASE
     best = None
     i = 0
@@ -114,8 +98,8 @@ def main():
                          "using the largest unprogrammed run")
     args = ap.parse_args()
 
-    # The checksum loop walks the ROM a longword at a time and skips the single
-    # longword holding its own expected value, so that field has to be aligned.
+    # The checksum loop skips its own reference longword by address compare,
+    # so that field has to be longword aligned.
     assert TESTIPL_BASE % 4 == 0, "TESTIPL_BASE must be longword aligned"
     assert (TESTIPL_BASE + ROMSUM_OFF) % 4 == 0
 
@@ -165,12 +149,12 @@ def main():
     if ipl is None:
         rom = bytearray([FILL]) * IPL_LEN
         rom[inj:end] = payload
-        # The reset vector is the whole of the hand-off: the 68000 takes SSP and
-        # PC from these two longwords and the TEST-IPL does the rest itself.
+        # The reset vector is the whole hand-off: the 68000 takes SSP and PC
+        # from these two longwords and TEST-IPL does the rest itself.
         put32(rom, RESET_SSP_ADDR - IPL_BASE, STACK_TOP)
     else:
-        # Refuse to inject over anything that is not fill: better a loud failure
-        # than a ROM that quietly has a hole punched in its code.
+        # Refuse to inject over anything that is not fill: better a loud
+        # failure than a ROM with a hole quietly punched in its code.
         target = ipl[inj:end]
         fill = target[0] if target else 0
         if fill not in (0x00, 0xFF) or any(b != fill for b in target):

@@ -1,20 +1,13 @@
 #!/bin/sh
 # Full regression for the standalone TEST-IPL ROM under MAME.
 #
-#   ./regress.sh
-#
 # Checks that a healthy machine passes at every supported RAM size, that
-# injected faults are actually detected, and that the serial byte stream is
-# complete.
-#
-# There is no "boots identically to the stock ROM" check any more: this ROM is
-# a self test that halts when it is done and deliberately boots nothing.
+# injected faults are detected, and that the serial byte stream is complete.
 set -e
 cd "$(dirname "$0")"
 
-# MAME's -video none still creates a window: renderer_none attaches to an
-# osd_window and window_init runs unconditionally, so a real window appears and
-# takes focus.  SDL's dummy video driver stops it reaching the display at all.
+# -video none still creates a window: renderer_none attaches to an osd_window
+# and window_init runs unconditionally.  SDL's dummy driver stops that.
 export SDL_VIDEODRIVER=dummy
 
 STOCK=../../x68kxvi
@@ -40,12 +33,10 @@ run () {  # run <romdir> <ram-slot> <script> <seconds>
 mkrom roms "$BUILD/testipl.dat"
 mkrom roms_stock
 
-# Boot the stock ROM once so SRAM is initialised.  Our ROM never writes it --
-# it boots nothing -- so without this the signature check correctly reports the
-# flat-battery case and the first run would differ from the rest.
-#
-# No autoboot script: this only has to let Human68k write its signature to
-# NVRAM, and MAME persists that in nvram/ for every run after it.
+# Boot the stock ROM once so SRAM is initialised.  Our ROM never writes it, so
+# without this the signature check correctly reports the flat-battery case and
+# the first run would differ from the rest.  No autoboot script needed: this
+# only has to let Human68k write its signature to the NVRAM MAME persists.
 echo "(warming up SRAM with a stock boot)"
 mame x68kxvi -rompath roms_stock -bios ipl12 -ram 4m -video none -sound none \
   -window -nomaximize -nothrottle -seconds_to_run 14 >/dev/null 2>&1 || true
@@ -60,9 +51,9 @@ done
 echo
 echo "=== injected faults must be detected ==="
 
-# CGROM is judged against CGROM_SUM now, and the value is printed in brackets
-# either way.  Check both halves: the stock dump passes, and one flipped bit
-# both fails and reports a different value.
+# CGROM is judged against CGROM_SUM, with the value printed either way.  Check
+# both halves: the stock dump passes, and one flipped bit both fails and
+# reports a different value.
 cgline () { sed -n 's/^ *CGROM checksum\.*  *//p'; }
 base_cg=$(run roms 2m screen.lua 20 | cgline)
 mkrom roms_cg "$BUILD/testipl.dat"
@@ -113,10 +104,9 @@ run roms 2m nogpip.lua 20 | grep -E 'video timing|FAILED' | tr '\n' ' '; echo
 echo
 echo "=== an optional test that faults reports SKIP, not FAIL ==="
 # fault_handler unwinds straight to run_test's .fault, so the test's own movem
-# restore never runs.  The fault verdict therefore cannot live in a register a
-# test might be using -- test_sprram stashes VC R2, and when that was d2 a
-# sprite RAM bus error printed FAIL instead of SKIP.  Point sprite RAM at an
-# odd address so the test is guaranteed to fault, and check the verdict.
+# restore never runs and the fault verdict cannot live in a register a test
+# might be using.  Point sprite RAM at an odd address so the test is guaranteed
+# to fault, and check the verdict is SKIP rather than FAIL.
 sed -e 's/^SPRRAM          equ     \$EB8000/SPRRAM          equ     $EB8001/' \
     -e 's/^SPRRAM_END      equ     \$EC0000/SPRRAM_END      equ     $EC0001/' \
     ../x68testipl.s > /tmp/sprfault.s

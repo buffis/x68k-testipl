@@ -2,25 +2,23 @@
 ; x68testipl.s -- TEST-IPL, a power-on self test for the Sharp X68000 family
 ;
 ; Assembles with vasm (Motorola syntax) to a raw binary that build.py pads into
-; a 128K IPL ROM image.  Takes the machine at reset, runs the tests, reports on
-; screen and over RS-232C, and stops.  Contains no Sharp code.
+; a 128K IPL ROM image.  Contains no Sharp code.
 ;
-; Constraints this code works under:
-;   * It runs at reset, so nothing is initialised: no stack, no vector table,
-;     no video, no RAM.  Main RAM is under test, so the stack must not live
-;     there -- off-screen text VRAM is used instead.
+; Constraints:
+;   * Runs at reset, so nothing is initialised: no stack, no vector table, no
+;     video, no RAM.  Main RAM is under test, so the stack lives in off-screen
+;     text VRAM instead.
 ;   * Absolute, position-dependent code.  TESTIPL_BASE must match build.py.
-;   * Nothing runs after us, so the tests are free to leave hardware dirty.
+;   * Nothing runs after us, so the tests may leave hardware dirty.
 ;
-; docs/TESTS.md covers every report line in detail: what is read or written at
-; which address, what a pass proves, and what it does not.
+; docs/TESTS.md covers every report line in detail.
 ;-----------------------------------------------------------------------------
 
-; Where the code sits in the ROM.  Normally supplied by build.py with
-; -DTESTIPL_BASE=...; the default matches it.  The 68000 fetches SSP from
-; $FF0000 and its reset PC from $FF0004, so the code starts just past those two
-; longwords.  TESTIPL_BASE must be 4-aligned: the ROM checksum loop skips its
-; own reference longword by address compare, which needs a longword boundary.
+; Where the code sits in the ROM; build.py supplies it with -DTESTIPL_BASE=...
+; and the default matches.  The 68000 fetches SSP from $FF0000 and its reset PC
+; from $FF0004, so the code starts just past those two longwords.  Must be
+; 4-aligned: the ROM checksum loop skips its own reference longword by address
+; compare.
                 ifnd    TESTIPL_BASE
 TESTIPL_BASE    equ     $FF0010
                 endif
@@ -31,8 +29,8 @@ TESTIPL_BASE    equ     $FF0010
 GVRAM           equ     $C00000
 GVRAM_TEST_END  equ     $C80000         ; all 512K of it
 TVRAM           equ     $E00000         ; 4 planes, 128K each, contiguous
-; Top 4K of plane 3 = text lines 992-1023, off the bottom of a 512-line screen.
-; The stack and work area live there, so it is held back from the TVRAM test.
+; Top 4K of plane 3 = text lines 992-1023, off the bottom of a 512-line screen:
+; the stack and work area, so it is held back from the TVRAM test.
 TVRAM_RESV      equ     $E7F000
 TVRAM_PLANE     equ     $20000          ; bytes between planes
 CRTC            equ     $E80000
@@ -92,9 +90,9 @@ RESULT_COL      equ     30              ; column every verdict lands on
 LEFT_MARGIN     equ     1
 
 ;--- stack and work area, in the reserved top 4K of text VRAM -----------------
-; Both start at the same address: the stack grows down from it, the work area
-; grows up.  Main RAM is under test and graphic VRAM folds onto itself, so text
-; VRAM is the only memory here that is flat and not a test subject.
+; Both start at the same address: the stack grows down, the work area up.  Main
+; RAM is under test and graphic VRAM folds onto itself, so text VRAM is the only
+; flat memory here that is not itself a test subject.
 STACK_TOP       equ     $E7FF00         ; grows down through $E7F000-$E7FEFF
 ; w_col and w_row must stay at WORK+0 and WORK+2: the MAME harness scripts read
 ; the cursor straight out of $E7FF00/$E7FF02 to tell when a run has finished.
@@ -109,11 +107,11 @@ w_progcol       equ     WORK+12         ; word  column a run of progress marks
                                         ;       began at, $FFFF when none is open
 w_addrcol       equ     WORK+14         ; word  column test_dram's address field
                                         ;       sits at, $FFFF when none is open
-; Detail for the line under a FAIL.  run_test clears w_fdetail before every
-; test, so a test that sets it owns the line and nothing stale survives.
+; Detail for the line under a FAIL.  Cleared by run_test before every test, so a
+; test that sets it owns the line and nothing stale survives.
 w_fdetail       equ     WORK+16         ; word  kind: 0 none, 1 exp/got, 2 stuck
-; A checksum to show in brackets after the verdict, e.g. OK (13C64BFE).  Also
-; cleared by run_test, so only the test that sets it owns the brackets.
+; Checksum to show in brackets after the verdict, e.g. OK (13C64BFE).  Also
+; cleared by run_test.
 w_sumshow       equ     WORK+18         ; word  non-zero to print w_sum
 w_ramsize       equ     WORK+20         ; long  detected main RAM bytes
 w_faddr         equ     WORK+24         ; long  address of the first bad longword
@@ -127,11 +125,9 @@ MEM_XOR         equ     $5A5AA5A5       ; address-derived fill pattern
 
 ;-----------------------------------------------------------------------------
 ; probe_stack \1 -- if off-screen text VRAM stores data, point a7 at it;
-; otherwise branch to \1 with a7 untouched.
-;
-; A macro rather than a subroutine because the first use runs before there is a
-; stack to bsr with.  Two patterns and a longword below the base, so a window
-; that folds onto itself or does not decode at all cannot pass.
+; otherwise branch to \1 with a7 untouched.  A macro, not a subroutine: the
+; first use runs before there is a stack to bsr with.  Two patterns and a
+; longword below the base, so a window that folds onto itself cannot pass.
 ;-----------------------------------------------------------------------------
 probe_stack     macro
                 lea     TVRAM_RESV,a0
@@ -152,7 +148,7 @@ probe_stack     macro
                 org     TESTIPL_BASE
 
 ;=============================================================================
-; header -- fixed layout so build.py can patch the checksum without reading
+; header -- fixed layout, so build.py can patch the checksum without reading
 ; symbols out of the assembler listing.
 ;   +0  branch to the entry point (the reset vector points here)
 ;   +4  expected ROM checksum
@@ -170,14 +166,13 @@ testipl_entry:
 ;--- let low memory be written -----------------------------------------------
 ; AREASET governs what may be written to low memory and comes up undefined at
 ; power-on; leave it alone and writes above $400 hang the bus on real hardware.
-; A stock IPL clears it within a few instructions of reset.  MAME does not
-; implement the register, so this cannot be verified in emulation.
+; MAME does not implement the register, so this cannot be verified there.
                 move.b  #0,AREASET
 
 ;--- make video RAM decode predictable before anything touches it ------------
 ; Text VRAM is only a flat array while CRTC R21 has simultaneous-plane access
-; and the access mask switched off, and R21 is undefined at power-on.  These
-; two stores have no dependencies, so they are safe to do with no stack.
+; and the access mask switched off, and R21 is undefined at power-on.  Neither
+; store has dependencies, so both are safe with no stack.
                 move.w  #$0B16,CRTC+$28         ; R20 memory / display mode
                 clr.w   CRTC+$2A                ; R21 plain, unmasked writes
 
@@ -194,10 +189,10 @@ testipl_entry:
                 bne     dead_end
                 lea     $2000,a7
 .have_stack:
-; Fill ALL 256 exception vectors before touching hardware, not just the two we
-; use.  Level 7 is non-maskable, so the move.w #$2700,sr above is no protection:
-; any interrupt raised from the undefined power-on state would vector through
-; whatever noise low RAM holds.  Both stock IPLs do this as their first act.
+; Fill ALL 256 exception vectors, not just the two we use.  Level 7 is
+; non-maskable, so the move.w #$2700,sr above is no protection: an interrupt
+; raised from the undefined power-on state would vector through whatever noise
+; low RAM holds.  Both stock IPLs do this as their first act.
                 lea     $0,a0
                 move.l  #vec_ignore,d0
                 move.w  #255,d1
@@ -212,8 +207,7 @@ testipl_entry:
 ;--- stop the DMAC before anything reads or writes memory in bulk ------------
 ; The HD63450 comes up undefined, and a channel that powers up armed will
 ; arbitrate for the bus and run transfers of its own.  Abort every channel, idle
-; it, clear its status.  Guarded: this is the first device touched, so a fault
-; here must not jump through a stale a3.
+; it, clear its status.  Guarded, since this is the first device touched.
                 lea     .dmac_done,a3
                 move.l  a7,a4
                 lea     DMAC,a0
@@ -229,23 +223,23 @@ testipl_entry:
 
 ;--- video first, then anything that has to be remembered --------------------
 ; Text VRAM is refreshed by the display, so its cells decay while the CRTC is
-; idle.  Bring the display up and wait for it to actually scan before testing
-; half a megabyte of it.  (The stack probe above is safe either way: it writes
-; and reads back within microseconds.)
+; idle.  Bring the display up and wait for it to scan before testing half a
+; megabyte of it.  (The stack probe above writes and reads back within
+; microseconds, so it is safe either way.)
                 bsr     video_init              ; CRTC + video controller + palette
                 bsr     wait_scanning
 
 ;--- get the stack out of main RAM ------------------------------------------
 ; The probe at entry ran before the CRTC was programmed, so on a cold machine it
 ; takes the fallback and leaves the stack at $2000 -- inside the region test_dram
-; patterns over.  Now that the display is scanning, ask again.  Straight-line
-; code with nothing live on the stack, so a7 can simply be reloaded.
+; patterns over.  Ask again now the display is scanning; nothing is live on the
+; stack here, so a7 can simply be reloaded.
                 probe_stack .keep_stack
 .keep_stack:
 
-; The work area lives in text VRAM, so it is only held up once the display is
-; scanning.  Initialise it here, after video_init -- not before, where it would
-; have to survive the whole of test_tvram unrefreshed.
+; The work area lives in text VRAM, so it only holds up once the display is
+; scanning -- hence here rather than before video_init, where it would have to
+; survive the whole of test_tvram unrefreshed.
                 clr.w   w_fail
                 clr.l   w_ramsize
                 move.w  #LEFT_MARGIN,w_col
@@ -276,9 +270,9 @@ testipl_entry:
 ;=============================================================================
 ; the tests
 ;=============================================================================
-; Devices first, then memory.  Memory is second on purpose: main RAM is the
-; slowest test and the one most likely to hang a sick machine, so by the time
-; it runs the whole report above it is already on screen.
+; Devices first, then memory: main RAM is the slowest test and the one most
+; likely to hang a sick machine, so by the time it runs the rest of the report
+; is already on screen.
 
 ;--- devices -----------------------------------------------------------------
                 lea     n_mfp,a0
@@ -326,8 +320,7 @@ testipl_entry:
                 lea     test_cgrom,a1
                 bsr     run_test
 
-; Verdict was worked out at startup, before anything could be printed; reported
-; here with the rest of memory.
+; Verdict was worked out at startup, before anything could be printed.
                 lea     n_tvram,a0
                 bsr     line_start
                 move.w  w_tvram,d0
@@ -350,9 +343,8 @@ testipl_entry:
                 lea     test_sram,a1
                 bsr     run_test
 
-; Size first, on its own line, so the machine's memory is on screen before the
-; slow part starts; then the pattern test under it; then the cross-check that
-; what was found matches what SRAM says should be there.
+; Size first, so the machine's memory is on screen before the slow part starts;
+; then the pattern test; then the cross-check against what SRAM says.
                 lea     n_ramsize,a0
                 lea     test_ramsize,a1
                 bsr     run_test
@@ -390,10 +382,9 @@ testipl_entry:
                 bsr     serial_crlf
 .halt:
                 ifd     IPL_ENTRY
-; Hold long enough for the report to be read, then hand the machine over: the
-; IPL clears the screen on its way to booting, so without a pause the whole run
-; would flash past.  A failing run holds longer, since that is the one you
-; actually want to read.  The serial log has it all either way.
+; Hold long enough for the report to be read, then hand over: the IPL clears the
+; screen on its way to booting, so without a pause the run would flash past.  A
+; failing run holds longer.  The serial log has it all either way.
                 moveq   #3,d0
                 tst.w   w_fail
                 beq.s   .hold
@@ -408,9 +399,8 @@ testipl_entry:
                 jmp     IPL_ENTRY               ; the injected IPL takes over
                 endif
                 ifnd    IPL_ENTRY
-; Standalone there is nothing to hand over to, so stop with the report up.
-; Interrupts are already masked, so STOP parks here for good; the loop is belt
-; and braces against a stray NMI.
+; Nothing to hand over to, so stop with the report up.  Interrupts are masked,
+; so STOP parks here for good; the loop is belt and braces against a stray NMI.
                 bsr     newline
                 lea     s_halted,a0
                 moveq   #COL_NORMAL,d1
@@ -423,33 +413,30 @@ testipl_entry:
                 bra.s   .stopped
                 endif
 
-; nmi_handler: level 7, which no status register can mask.
-;
-; A plain rte is not enough.  If something has latched an NMI -- and from cold
-; the hardware is in whatever state power-up left it -- an rte returns straight
-; into it again and the machine spins in an interrupt loop that looks exactly
-; like a stalled bus.  Writing $0C to the system port is what acknowledges it,
-; which is what exbios' handler does first too.
+; nmi_handler: level 7, which no status register can mask.  A plain rte is not
+; enough -- if something has latched an NMI, rte returns straight into it and the
+; machine spins in a loop that looks exactly like a stalled bus.  Writing $0C to
+; the system port is what acknowledges it.
 nmi_handler:
                 move.b  #$0C,SYSPORT+7
                 rte
 
-; vec_ignore: anything we have not given a real handler to.  Returning is right
-; for a spurious interrupt; for a genuine fault it is no worse than the garbage
-; address it replaces.
+; vec_ignore: anything without a real handler.  Returning is right for a
+; spurious interrupt, and for a genuine fault no worse than the garbage address
+; it replaces.
 vec_ignore:
                 rte
 
 dead_end:
-; No usable memory anywhere: nothing can be reported.  Make the failure at
-; least visible on a scope by rattling the system port.
+; No usable memory anywhere, so nothing can be reported.  Rattle the system port
+; to make the failure at least visible on a scope.
                 move.b  #$0F,SYSPORT+1
                 move.b  #$00,SYSPORT+1
                 bra.s   dead_end
 
 ; Bus / address error handler.  A group 0 fault cannot be resumed, so the only
-; recovery is to discard the frame and jump somewhere known-good; a3 and a4 are
-; set up by whichever probe is running.
+; recovery is to discard the frame and jump to a3, with a7 from a4 -- both set
+; up by whichever probe is running.
 fault_handler:
                 movea.l a4,a7
                 jmp     (a3)
@@ -459,8 +446,8 @@ fault_handler:
 ;   in:  a0 = base, d1 = longword count (32 bit)
 ;   out: d0 = 0 pass / 1 fail, a0 = end (fill) or failing address (verify)
 ; The pattern is derived from the address, so stuck or swapped address lines
-; show up as well as stuck data bits.  Both loop in chunks of $8000 longwords
-; because dbra counts 16 bits and the regions are bigger than that.
+; show up as well as stuck data bits.  Chunked at $8000 longwords because dbra
+; counts 16 bits and the regions are bigger than that.
 ;=============================================================================
 mem_fill:
                 movem.l d1-d3,-(sp)
@@ -507,8 +494,7 @@ mem_verify:
                 bra.s   .out
 .bad:
                 subq.l  #4,a0                   ; point at the failing longword
-; Which address failed, and how, is the difference between "some RAM is bad"
-; and knowing which device to replace: the bits that differ name the chip.
+; Record where and how: the bits that differ name the chip to replace.
                 move.l  a0,w_faddr
                 move.l  d0,w_fexp
                 move.l  (a0),w_fgot
@@ -537,8 +523,8 @@ test_tvram:
 
 ;--- CGROM checksum ----------------------------------------------------------
 ; Sums the whole 768K font ROM and compares against CGROM_SUM.  The value is
-; printed in brackets whichever way the verdict goes, so a machine carrying a
-; different revision gives you a number to record rather than a bare FAIL.
+; printed in brackets either way, so a machine carrying a different revision
+; gives you a number to record rather than a bare FAIL.
 test_cgrom:
                 movem.l d1-d2/a0,-(sp)
                 lea     CGROM,a0
@@ -560,10 +546,9 @@ test_cgrom:
                 rts
 
 ;--- IPL ROM checksum --------------------------------------------------------
-; Sums the whole 128K ROM except the four bytes holding the reference value, so
-; the ROM verifies the very code you are running.  This checks the EPROM burn,
-; not the machine -- the machine's own IPL is out of its socket while this one
-; is in it.
+; Sums the whole 128K ROM except the longword holding the reference value, so
+; the ROM verifies the code you are running.  This checks the EPROM burn, not
+; the machine: the machine's own IPL is out of its socket while this one is in.
 test_romsum:
                 movem.l d1/a0-a1,-(sp)
                 lea     IPLROM,a0
@@ -589,8 +574,7 @@ test_romsum:
 ;--- graphic VRAM ------------------------------------------------------------
 ; The 2MB graphic VRAM window folds onto 512K of real memory, and how it folds
 ; is set by CRTC R20 bits 8-11.  Switch to the mode that maps the first 512K
-; through as plain 16-bit words, test all of it, then put R20 back for the
-; display.
+; through as plain 16-bit words, test it, then put R20 back for the display.
 test_gvram:
                 movem.l d1/a0,-(sp)
                 move.w  #$0316,CRTC+$28         ; whole words, no nibble packing
@@ -605,10 +589,10 @@ test_gvram:
                 rts
 
 ;--- main RAM: sizing ---------------------------------------------------------
-; Sizes memory by tagging each megabyte and reading every tag back, which
-; catches both bus errors off the top and aliasing on a part-populated machine.
-; The result goes in w_ramsize and is reported as this line's verdict, so the
-; size is on screen before the pattern pass below it starts running.
+; Tags each megabyte and reads every tag back, which catches both running off
+; the top and aliasing on a part-populated machine.  The result goes in
+; w_ramsize and is reported as this line's verdict, so the size is on screen
+; before the pattern pass below it starts.
 test_ramsize:
                 movem.l d1-d6/a0-a4,-(sp)
 
@@ -674,11 +658,11 @@ test_ramsize:
 
 ;--- phase 1c: is the megabyte above the top absent, or present and faulty? --
 ; Sizing stops at the first megabyte whose tag does not read back, which happens
-; both when there is no memory there and when there is memory with a stuck bit.
-; Left alone, a failing chip would quietly be reported as a smaller machine.
-; Memory that is present still stores most of what you write, so write all-zeroes
-; and all-ones and count how many bits misbehave: a handful means a faulty
-; device, everything means there is nothing there at all.
+; both when nothing is there and when there is memory with a stuck bit -- left
+; alone, a failing chip would quietly be reported as a smaller machine.  Memory
+; that is present still stores most of what you write, so write all-zeroes and
+; all-ones and count the bits that misbehave: a handful is a faulty device,
+; everything means nothing is there.
                 cmp.l   #MAX_RAM_MB,d4
                 bge.s   .no_boundary
                 lea     .no_boundary,a3         ; a fault here just means absent
@@ -701,8 +685,7 @@ test_ramsize:
                 bsr     count_bits
                 cmp.l   #8,d0
                 bhi.s   .no_boundary            ; too many: nothing is there
-; A few bits misbehaving is a faulty device, and the mask says which ones --
-; the bit numbers map straight onto the chips in that bank.
+; The mask says which bits, and the bit numbers map onto the chips in that bank.
                 move.l  a0,w_faddr
                 move.l  d5,w_fgot
                 move.w  #2,w_fdetail
@@ -720,23 +703,23 @@ test_ramsize:
                 rts
 
 ;--- main RAM: pattern test ---------------------------------------------------
-; Everything above the vector table, filled then verified a megabyte at a time.
-; Runs after test_ramsize, which is where w_ramsize comes from.
+; Everything above the vector table, filled then verified.  Runs after
+; test_ramsize, which is where w_ramsize comes from.
 test_dram:
                 movem.l d1-d6/a0-a4,-(sp)
                 move.l  a7,a4                   ; stack the handler restores
                 move.l  w_ramsize,d6
                 beq     .nosize                 ; sizing failed; nothing to test
-; Never pattern over our own stack.  If a7 is still in main RAM then both stack
-; probes failed, and patterning would overwrite the return addresses under it.
+; Never pattern over our own stack: a7 still in main RAM means both stack probes
+; failed, and patterning would overwrite the return addresses under it.
                 cmp.l   #TVRAM,a7
                 bcc.s   .stack_is_safe
                 moveq   #2,d0                   ; SKIP rather than self-destruct
                 bra     .out
 .stack_is_safe:
                 lea     .bad,a3
-; Everything is filled before anything is verified, so aliasing between
-; megabytes still shows up -- the slicing only exists to punctuate it.
+; Fill everything before verifying anything, so aliasing between megabytes still
+; shows up -- the slicing only exists to punctuate the progress display.
                 lea     $400,a0
                 bsr     .pwords
 .pfill:
@@ -768,11 +751,9 @@ test_dram:
                 lsr.l   #2,d6
                 rts
 
-; .pslice: take up to 2048 longwords (8K) off d6 and return it in d1.
-;
-; The slice size only sets how precisely the on-screen address names a stall.
-; It is not a hardware workaround, and smaller slices cost real time: 512 adds
-; about twelve seconds at 12 MB.
+; .pslice: take up to 2048 longwords (8K) off d6 and return it in d1.  The slice
+; size only sets how precisely the on-screen address names a stall, and smaller
+; slices cost real time: 512 adds about twelve seconds at 12 MB.
 .pslice:
                 move.l  d6,d1
                 cmp.l   #2048,d1
@@ -783,13 +764,10 @@ test_dram:
                 rts
 
 ; .pmark: d0 = phase letter ('W' filling, 'V' verifying), a0 = the address about
-; to be worked on.
-;
-; Shown as a letter and an address overwritten in place, because 80 slices per
-; 10 MB would run off the end of the line as marks but a number always fits --
-; and it says exactly which 8K block a stall happened in, which is the whole
-; point.  Written before the slice, not after, so the address on screen is the
-; one being worked on when it stops.  The serial line gets a plain dot per
+; to be worked on.  Overwritten in place, because 80 slices per 10 MB would run
+; off the end of the line as marks but a number always fits -- and it names the
+; 8K block a stall happened in.  Written before the slice, so the address on
+; screen is the one being worked on when it stops.  Serial gets a plain dot per
 ; slice; it has no cursor to rewind.
 .pmark:
                 movem.l d0-d2/a0,-(sp)
@@ -799,9 +777,9 @@ test_dram:
                 cmp.w   #$FFFF,w_addrcol
                 bne.s   .pmark_have
                 move.w  w_col,w_addrcol
-; Claim the progress column too.  This field is the only thing test_dram prints,
-; so if w_progcol stayed $FFFF progress_clear would do nothing and the verdict
-; would land after the address rather than over it.
+; Claim the progress column too: this field is all test_dram prints, so with
+; w_progcol left at $FFFF progress_clear would do nothing and the verdict would
+; land after the address rather than over it.
                 move.w  w_col,w_progcol
 .pmark_have:
                 move.w  w_addrcol,w_col         ; back to the start of the field
@@ -827,7 +805,7 @@ test_dram:
                 rts
 
 ; dram_tick: one dot per megabyte sized, so a machine that stalls part way
-; through says where rather than just sitting on an unfinished line.
+; through says where.
 dram_tick:
                 movem.l d0,-(sp)
                 moveq   #'.',d0
@@ -836,9 +814,8 @@ dram_tick:
                 rts
 
 ; progress_char: d0 = character, to screen and serial.  Remembers the column the
-; run started at so the marks can be wiped before the verdict is printed -- they
-; would otherwise push it out of its column and the whole report would stop
-; lining up.
+; run started at so the marks can be wiped before the verdict is printed --
+; otherwise they push it out of its column and the report stops lining up.
 progress_char:
                 movem.l d0-d1,-(sp)
                 cmp.w   #$FFFF,w_progcol
@@ -852,8 +829,8 @@ progress_char:
                 rts
 
 ; progress_clear: wipe the marks and put the cursor back where they started.
-; The serial log keeps them -- there is no cursor to rewind there, and a log
-; showing how far a run got is the entire point of them.
+; The serial log keeps them: no cursor to rewind, and a log showing how far a
+; run got is the point of them.
 progress_clear:
                 movem.l d0-d2,-(sp)
                 move.w  w_progcol,d2
@@ -894,14 +871,14 @@ count_bits:
                 rts
 
 ;--- main RAM vs SRAM --------------------------------------------------------
-; Human68k records the memory size it last configured at $ED0008.  Comparing it
-; with what we just measured catches a whole bank having gone missing.  The
-; stock IPL rewrites the value on every boot, so the mismatch only shows on the
-; first boot after the fault appears.  Returns SKIP when SRAM holds nothing
-; plausible, so an unconfigured machine is not reported as broken.
+; Human68k records the memory size it last configured at $ED0008; comparing it
+; with what we measured catches a whole bank having gone missing.  The stock IPL
+; rewrites the value on every boot, so the mismatch only shows on the first boot
+; after the fault appears.  SKIP when SRAM holds nothing plausible, so an
+; unconfigured machine is not reported as broken.
 ;
-; (Under MAME that address is faked from the configured RAM size rather than
-; read from NVRAM, so there it compares against the emulated machine's size.)
+; (MAME fakes that address from the configured RAM size rather than reading
+; NVRAM, so there it compares against the emulated machine's size.)
 test_ramsize_sram:
                 movem.l d1,-(sp)
                 move.l  SRAM+8,d1
@@ -923,9 +900,9 @@ test_ramsize_sram:
 
 ;--- battery SRAM ------------------------------------------------------------
 ; Read-only: SRAM holds the user's settings, so check the Human68k signature
-; rather than writing to it.  A failure here normally means the backup battery
-; is flat and the contents have been lost, not that the chip is bad -- the stock
-; IPL re-initialises SRAM when it sees the same thing.
+; rather than writing to it.  A failure here normally means a flat backup
+; battery and lost contents, not a bad chip -- the stock IPL re-initialises SRAM
+; when it sees the same thing.
 test_sram:
                 movem.l d1/a0-a1,-(sp)
                 lea     SRAM,a0
@@ -942,7 +919,7 @@ test_sram:
                 rts
 
 ;--- MC68901 MFP -------------------------------------------------------------
-; Timer B is stopped, so its data register behaves as a scratch register.  Two
+; Timer B is stopped, so its data register behaves as scratch.  Two
 ; complementary patterns, so a bus line stuck either way cannot pass.
 test_mfp:
                 movem.l d1/a0,-(sp)
@@ -969,20 +946,19 @@ test_mfp:
 ; The CRTC register file is write-only on real silicon -- R00/R04 read back
 ; $0000 while the screen is plainly being scanned -- so no readback test of it
 ; can work.  Ask the MFP instead: the CRTC drives V-DISP into GPIP bit 4 and
-; H-SYNC into bit 7, so either one toggling is externally visible proof that it
-; is generating timing.
+; H-SYNC into bit 7, so either one toggling proves it is generating timing.
 ;
 ; Sample the port hard, accumulating OR and AND; OR & ~AND is the set of bits
 ; that changed.  An undriven bus reads all-ones constantly, so it cancels out
-; and correctly reads as dead rather than as live data.
+; and reads as dead rather than as live data.
 ;
 ; GPIP bit 6 (raster interrupt) is deliberately out of the mask: it only toggles
 ; once a raster line has been programmed.  For the same reason one of the two
 ; signals is enough.
 ;
 ; Exits as soon as both bits move, about one frame; the counter only bounds the
-; dead case.  V-DISP toggles once per ~18 ms, so the window must be able to span
-; a frame: 40000 iterations is ~200 ms at 10 MHz, ~60 ms on a 25 MHz 68030.
+; dead case.  V-DISP toggles once per ~18 ms, so the window must span a frame:
+; 40000 iterations is ~200 ms at 10 MHz, ~60 ms on a 25 MHz 68030.
 test_vidtiming:
                 movem.l d1-d4/a0,-(sp)
                 lea     MFP_GPIP,a0
@@ -1015,12 +991,10 @@ test_vidtiming:
 
 ;--- RP5C15 RTC: is the chip there and does its bus work? --------------------
 ; Bank 1 holds the alarm registers, which are plain storage and do not depend on
-; the oscillator at all.  Select bank 1, write $5 then $A to alarm register 2
-; and read each back.  Proves the register file and the bus to the chip and
-; nothing else -- whether the clock runs is test_rtcosc's problem.
-;
-; Deliberately not a BCD sanity check on the time registers: a clock frozen at a
-; plausible time would pass that.
+; the oscillator.  Select bank 1, write $5 then $A to alarm register 2 and read
+; each back.  Proves the register file and the bus and nothing else -- whether
+; the clock runs is test_rtcosc's problem.  Deliberately not a BCD sanity check
+; on the time registers: a clock frozen at a plausible time would pass that.
 test_rtc:
                 movem.l d1-d2,-(sp)
                 move.b  RTC_MODE,d1
@@ -1060,10 +1034,10 @@ test_rtc:
 ; from a dead oscillator, and MAME comes up with the bit clear.
 ;
 ; Timed by counting V-DISP frames, not delay_seconds: that is calibrated for a
-; 10 MHz 68000 and runs several times faster on an X68030.  Frames are ~55 Hz
-; whatever the CPU does, so counting them measures real time.  With no CRTC
-; scanning there are no frames and it falls back to delay_seconds -- such a
-; machine has already failed the video timing test a line earlier.
+; 10 MHz 68000 and runs several times faster on an X68030, while frames are
+; ~55 Hz whatever the CPU does.  With no CRTC scanning there are no frames and
+; it falls back to delay_seconds -- such a machine has already failed the video
+; timing test a line earlier.
 test_rtcosc:
                 movem.l d1-d2,-(sp)
                 move.b  RTC_MODE,d0
@@ -1110,7 +1084,7 @@ rtc_secs:
                 rts
 
 ; wait_frames: d0 = frames to wait for, out d0 = 0 if the video timing never
-; moved and the wait was therefore not real time.  Every step is bounded, so a
+; moved and the wait was therefore not real time.  Bounded at every step, so a
 ; CRTC that is not scanning cannot hang the run.
 wait_frames:
                 movem.l d1-d2,-(sp)
@@ -1142,8 +1116,8 @@ wait_frames:
                 rts
 
 ;--- HD63450 DMAC ------------------------------------------------------------
-; Channel 0 is idle at reset, so its memory address register reads back what we
-; write, proving the device is decoded and alive.
+; Channel 0 is idle at reset, so its memory address register reads back what is
+; written, proving the device is decoded and alive.
 test_dmac:
                 movem.l d1/a0,-(sp)
                 lea     DMAC,a0
@@ -1179,7 +1153,7 @@ test_opm:
 ;--- MSM6258 ADPCM -----------------------------------------------------------
 ; Not tested.  Its only readable register leaves most bits open, so on real
 ; hardware the read returns bus float -- a healthy PRO gives $FF on one boot and
-; $C0 on the next.  Proving the chip alive needs a command and an observed state
+; $C0 on the next.  Proving it alive needs a command and an observed state
 ; change, which is more than this ROM can do between reset and handing over.
 
 ;--- uPD72065 FDC ------------------------------------------------------------
@@ -1195,11 +1169,11 @@ test_fdc:
 
 ;--- MB89352 SCSI ------------------------------------------------------------
 ; Internal SCSI only exists on the SUPER, XVI, Compact and X68030; the original
-; machine, ACE, EXPERT and PRO have SASI at $E96000 instead and nothing at all
-; at $E96020.  BDID reports the host adapter's own ID as a single one-hot bit,
-; so $00 or $FF means nothing is answering and the controller is simply not
-; fitted -- report that as SKIP, not as a fault.  A controller that is present
-; but broken still drives the bus and fails the one-hot check.
+; machine, ACE, EXPERT and PRO have SASI at $E96000 and nothing at $E96020.
+; BDID reports the host adapter's own ID as a single one-hot bit, so $00 or $FF
+; means nothing is answering and the controller is not fitted -- SKIP, not a
+; fault.  One that is present but broken still drives the bus and fails the
+; one-hot check.
 test_scsi:
                 movem.l d1-d2,-(sp)
                 moveq   #0,d1
@@ -1252,11 +1226,10 @@ test_ppi:
 ; where it is not: IOCS _SP_INIT ($FFC418 in the Compact IPL) opens with a guard
 ; that reads CRTC R20 and refuses to touch sprite hardware when the low byte is
 ; $16 -- exactly what video_init writes.  On real hardware a word read of
-; $EB8000 bus-errors at $0B16 and returns data at $0B15.
-;
-; So switch to $0B15 for the test.  The display is garbled while it runs, since
-; the rest of the CRTC timing still describes the old mode.  R20 is restored at
-; the dispatch site -- the only place that survives a bus error.
+; $EB8000 bus-errors at $0B16 and returns data at $0B15, so switch to $0B15 for
+; the test.  The display is garbled while it runs, since the rest of the CRTC
+; timing still describes the old mode.  R20 is restored at the dispatch site --
+; the only place that survives a bus error.
 test_sprram:
                 movem.l d1-d2/a0,-(sp)
                 move.w  #$0B15,CRTC+$28
@@ -1276,13 +1249,11 @@ test_sprram:
                 rts
 
 ; sprite_init: put the sprite/BG controller into a state that lets the CPU reach
-; sprite RAM.
-;
-; The four timing registers get the values and order a stock IPL writes, tapped
-; from a live boot -- they read back $FF, so post-boot state does not tell you
-; what was programmed.  The control register must then get $0000, not the $0010
-; an IPL leaves behind: bit 4 looks like a BG enable, and a controller fetching
-; from its own RAM will not let the CPU in.  Both halves are needed.
+; sprite RAM.  The four timing registers get the values and order a stock IPL
+; writes, tapped from a live boot -- they read back $FF, so post-boot state does
+; not tell you what was programmed.  The control register must then get $0000,
+; not the $0010 an IPL leaves behind: bit 4 looks like a BG enable, and a
+; controller fetching from its own RAM will not let the CPU in.  Both are needed.
 sprite_init:
                 move.w  #$00FF,SPR_HDISP
                 move.w  #$00FF,SPR_HTOTAL
@@ -1294,16 +1265,16 @@ sprite_init:
 ;--- CRTC --------------------------------------------------------------------
 ; Not tested by readback: the register file does not read back on real silicon.
 ; A machine with a visibly correct 768x512 display returns $0000 from R00, R04
-; and R20 alike.  See test_vidtiming, which asks the MFP instead -- and the
-; screen carrying this report is itself better evidence than any readback.
+; and R20 alike.  test_vidtiming asks the MFP instead -- and the screen carrying
+; this report is better evidence than any readback.
 
 ;=============================================================================
 ; video
 ;=============================================================================
-; wait_scanning: block until the CRTC is really scanning, or give up trying.
-; Watches V-DISP on the MFP GPIP go high then low a few times, a frame each.
-; Bounded at every step: a CRTC that never scans must not hang the run, and
-; test_vidtiming reports that case properly a few lines later.
+; wait_scanning: block until the CRTC is really scanning, or give up.  Watches
+; V-DISP on the MFP GPIP go high then low a few times, a frame each.  Bounded at
+; every step: a CRTC that never scans must not hang the run, and test_vidtiming
+; reports that case properly a few lines later.
 wait_scanning:
                 movem.l d0-d2,-(sp)
                 moveq   #4,d0                   ; five frames is ~90 ms at 55 Hz
@@ -1333,9 +1304,8 @@ video_init:
                 movem.l d0/a0-a1,-(sp)
 ; Monitor contrast is zero out of reset and the display stays blank until it is
 ; set -- the stock IPL loads it from SRAM at $FF00D4, long after we run.  Wind it
-; to maximum: this is a diagnostic screen and should be readable whatever the
-; user's saved preference is.  The stock IPL restores their setting when we hand
-; over.
+; to maximum: a diagnostic screen should be readable whatever the user's saved
+; preference is, and the stock IPL restores their setting when we hand over.
                 move.b  #$0F,SYSPORT+1
                 lea     CRTC,a0
                 lea     crtc_tab,a1
@@ -1445,9 +1415,8 @@ newline:
 .ok:            rts
 
 ; scroll_up: shift both text planes up one row and blank the last one, so a
-; report longer than the screen does not overwrite its own final line.  Only
-; runs on overflow, and copies about 124K, so it costs nothing on a report that
-; fits.
+; report longer than the screen does not overwrite its own final line.  Copies
+; about 124K, but only on overflow.
 scroll_up:
                 movem.l d0-d2/a0-a2,-(sp)
                 lea     TVRAM,a2
@@ -1525,7 +1494,7 @@ print_hex:
                 rts
 
 ; print_hex_scr: as print_hex but screen only, for the test_dram progress
-; address -- print_hex would drown the serial log at once per 8K.
+; address -- once per 8K would drown the serial log.
 print_hex_scr:
                 movem.l d1/a0,-(sp)
                 bsr     hex_to_buf
@@ -1554,12 +1523,11 @@ detail_str:
 ;=============================================================================
 ; test dispatch
 ;=============================================================================
-; run_test / run_test_opt: a0 = test name, a1 = test routine.
-;
-; Prints the name, establishes bus-error recovery around the call, runs the test
-; and prints the verdict.  A bus error means nothing responded at all: run_test
-; calls that FAIL, run_test_opt calls it SKIP for genuinely optional hardware.
-; Either way a device that answers but returns bad data fails on its data.
+; run_test / run_test_opt: a0 = test name, a1 = test routine.  Prints the name,
+; establishes bus-error recovery around the call, runs the test and prints the
+; verdict.  A bus error means nothing responded at all: run_test calls that
+; FAIL, run_test_opt SKIP, for genuinely optional hardware.  Either way a device
+; that answers but returns bad data fails on its data.
 run_test:
                 moveq   #5,d2                   ; verdict if the probe faults
                 bra.s   run_test_common
@@ -1568,8 +1536,8 @@ run_test_opt:
 run_test_common:
                 movem.l d1-d2/a0-a4,-(sp)
 ; The fault verdict must live in a work word, not a register: fault_handler
-; unwinds the stack straight to .fault, so the test's own movem restore never
-; runs and whatever it left in d2 would survive instead.
+; unwinds straight to .fault, so the test's own movem restore never runs and
+; whatever it left in d2 would survive instead.
                 move.w  d2,w_fverdict
                 clr.w   w_fdetail
                 clr.w   w_sumshow
@@ -1591,8 +1559,8 @@ run_test_common:
 ;=============================================================================
 ; result line formatting
 ;=============================================================================
-; line_start: a0 = test name.  Prints it and pads with dots so that every
-; verdict lands in the same column, on screen and on the serial line.
+; line_start: a0 = test name.  Prints it and pads with dots so every verdict
+; lands in the same column, on screen and on the serial line.
 line_start:
                 movem.l d0-d1/a0,-(sp)
                 move.l  a0,-(sp)
@@ -1636,8 +1604,8 @@ verdict:
                 bsr     serial_str
                 bra.s   .done
 .size:
-; Not a pass/fail at all: the line reports how much memory was found, and the
-; pattern test on the next line is what passes or fails on it.
+; Not a pass/fail: the line reports how much memory was found, and the pattern
+; test on the next line is what passes or fails on it.
                 bsr     print_ramsize
                 bra.s   .done
 .skip:
@@ -1713,7 +1681,7 @@ print_sum:
                 rts
 
 ; print_ramsize: writes the detected size, e.g. 4096K, where a verdict would go.
-; Called from verdict for the size line, so the line is already started.
+; Called from verdict, so the line is already started.
 print_ramsize:
                 movem.l d0-d1/a0,-(sp)
                 move.l  w_ramsize,d0
@@ -1734,9 +1702,9 @@ print_ramsize:
 ;=============================================================================
 ; SCC PCLK is 5MHz; time constant = PCLK / (2 * baud * 16) - 2.
 ;
-; NOTE: MAME's x68000 driver wires SCC channel B to the mouse and leaves
-; channel A's TxD unconnected, so this path cannot be observed under emulation.
-; It is checked there by watching writes to $E98007 instead.
+; MAME's x68000 driver wires SCC channel B to the mouse and leaves channel A's
+; TxD unconnected, so this path cannot be observed under emulation; the harness
+; watches writes to $E98007 instead.
 SCC_TC          equ     14                      ; ~9600 baud, 8N1
 
 serial_init:
@@ -1770,9 +1738,9 @@ serial_init:
                 move.b  #$C1,(a0)               ; WR3  rx enable
                 move.b  #5,(a0)
                 move.b  #$68,(a0)               ; WR5  tx enable
-; Give the transmitter a bounded chance to report ready.  If it never does,
-; leave serial disabled rather than stalling every line of output on a machine
-; whose SCC is dead or absent.
+; Bounded wait for the transmitter to report ready.  If it never does, leave
+; serial disabled rather than stalling every line of output on a machine whose
+; SCC is dead or absent.
                 move.w  #$0FFF,d0
 .ready:
                 btst    #2,SCC_ACTL             ; RR0 bit 2 = tx buffer empty
@@ -1825,12 +1793,12 @@ serial_crlf:
 ; onto the wire, not merely accepted it.
 ;
 ; serial_char waits for "tx buffer empty" (RR0 bit 2) before writing, which frees
-; the holding register while the byte before it is still in the shift register,
-; so when the final character returns there are up to two still in flight.
-; Standalone that is harmless -- the CPU parks in STOP and they drain on their
-; own -- but the injected build jumps straight to the IPL, which resets the SCC
-; and cuts them off mid-transmission.  On real hardware that lost the tail of
-; the last line; the serial log ended "...to the IP".
+; the holding register while the previous byte is still in the shift register,
+; so up to two are still in flight when the final character returns.  Standalone
+; that is harmless -- the CPU parks in STOP and they drain on their own -- but
+; the injected build jumps straight to the IPL, which resets the SCC and cuts
+; them off mid-transmission; on real hardware that lost the tail of the last
+; line.
 ;
 ; RR1 bit 0 is All Sent.  The SCC's register pointer auto-clears after each
 ; access, so register 1 has to be re-selected on every poll.  Bounded like every
@@ -1852,7 +1820,7 @@ serial_drain:
 ; delay_seconds: d0 = seconds
 ;=============================================================================
 ; Calibrated for a 10MHz 68000; a 16MHz XVI Compact runs it about 1.6x faster.
-; Prefer wait_frames where real time matters -- see test_rtcosc.
+; Use wait_frames where real time matters -- see test_rtcosc.
 delay_seconds:
                 movem.l d0-d2,-(sp)
                 move.l  d0,d2

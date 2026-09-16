@@ -1,8 +1,6 @@
--- Capture the whole RS-232C byte stream, dumping at machine stop rather than
--- on cursor settle -- which is what an injected build needs, since the IPL takes
--- the screen over and the cursor never settles.
---
--- This just taps channel A and dumps everything when the run ends.
+-- Capture the whole RS-232C byte stream, dumping at machine stop rather than on
+-- cursor settle -- what an injected build needs, since the IPL takes the screen
+-- over and the cursor never settles.
 local mem = manager.machine.devices[":maincpu"].spaces["program"]
 local out = {}
 _G.tap = mem:install_write_tap(0xe98006, 0xe98007, "scc_tx", function (offset, data, mask)

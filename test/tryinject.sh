@@ -1,18 +1,12 @@
 #!/bin/sh
-# Build and test injected TEST-IPL images: the tests run, then the machine is
-# handed over to whatever IPL the build was injected into.
-#
-#   ./tryinject.sh
-#
-# Checks, for each IPL: that the payload lands in unprogrammed space, that the
-# tests run, and that the machine then reaches the IPL on its own with nothing
-# pressed.
+# Build and test injected TEST-IPL images.  Checks, for each IPL, that the
+# payload lands in unprogrammed space, that the tests run, and that the machine
+# then reaches the IPL on its own with nothing pressed.
 set -e
 cd "$(dirname "$0")"
 
-# MAME's -video none still creates a window: renderer_none attaches to an
-# osd_window and window_init runs unconditionally, so a real window appears and
-# takes focus.  SDL's dummy video driver stops it reaching the display at all.
+# -video none still creates a window: renderer_none attaches to an osd_window
+# and window_init runs unconditionally.  SDL's dummy driver stops that.
 export SDL_VIDEODRIVER=dummy
 STOCK=../../x68kxvi
 
@@ -32,9 +26,8 @@ for spec in "exbios:exbios/exbios_v1.34.24_220429.rom:x68000:ipl10:iplrom.dat" \
   cp $STOCK/cgrom.dat $STOCK/iplrom*.dat $STOCK/*.bin $STOCK/*.ic11 $STOCK/*.ic12 $d/tmp/ 2>/dev/null
   # Boot the stock ROM once first so SRAM is initialised.  MAME starts with
   # blank NVRAM, which the signature test correctly reads as a flat backup
-  # battery, and the TEST-IPL never writes SRAM itself.  Without this the first
-  # spec in the loop reports a spurious SRAM signature FAIL while later ones
-  # pass, purely because an earlier iteration happened to warm the machine.
+  # battery, and TEST-IPL never writes SRAM.  Without this the first spec in
+  # the loop reports a spurious SRAM signature FAIL and later ones do not.
   rm -rf ${d}_stock; mkdir -p ${d}_stock
   cp $d/tmp/* ${d}_stock/ 2>/dev/null
   ( cd ${d}_stock && zip -q -j ./$mach.zip ./* \
@@ -53,19 +46,19 @@ for spec in "exbios:exbios/exbios_v1.34.24_220429.rom:x68000:ipl10:iplrom.dat" \
       | grep -viE 'wrong|expected:|found:|warning|iplrom|average|checksum problem'
   }
 
-  # The report is transient -- the IPL clears the screen on its way to booting --
-  # so capture it from the serial tap, which dumps at machine stop rather than
-  # waiting for the cursor to settle.
+  # The report is transient, since the IPL clears the screen on its way to
+  # booting, so capture it from the serial tap: that dumps at machine stop
+  # rather than waiting for the cursor to settle.
   printf '  TEST-IPL runs         '
   run serialstop.lua 60 | grep -E 'PASSED|TEST\(S\) FAILED' | tr '\n' ' '; echo
   printf '  boots through         '
   run bootthru.lua 90 | grep -E 'BOOTED THROUGH' | tr '\n' ' '; echo
 
   # Reaching the IPL is not the same as the IPL booting properly.  Compare the
-  # booted screen against the same IPL with nothing injected: if the TEST-IPL
-  # leaves the machine in a state the IPL does not recover from, this is what
-  # catches it.  Both runs are sampled the same interval after the IPL starts,
-  # since the injected one spends ~14 s in the TEST-IPL first.
+  # booted screen against the same IPL with nothing injected, which catches
+  # TEST-IPL leaving the machine in a state the IPL does not recover from.
+  # Both runs are sampled the same interval after the IPL starts, since the
+  # injected one spends ~14 s in TEST-IPL first.
   b=roms_base_$name
   rm -rf $b; mkdir -p $b/tmp
   cp $STOCK/cgrom.dat $STOCK/iplrom*.dat $STOCK/*.bin $STOCK/*.ic11 $STOCK/*.ic12 $b/tmp/ 2>/dev/null

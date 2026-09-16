@@ -11,13 +11,13 @@
 # Set RAM to test a different machine size, e.g.  RAM=2m ./run-mame.sh screen
 # (RAM is a slot device in current MAME: -ram 4m, not -ramsize 4M.)
 #
-# One image serves every model; this drives the Compact profile because that is
+# One image serves every model; this drives the Compact profile, since that is
 # what MAME's x68kxvi/ipl12 wants the file called.  Use tryall.sh for the rest.
 set -e
 cd "$(dirname "$0")"
 
 # Captured before the defaults below assign anything, so a per-mode default can
-# tell "caller did not set it" from "already defaulted to the standalone build".
+# tell "caller did not set it" from "defaulted to the standalone build".
 BUILD_SET=${BUILD:-}
 
 ROMDIR=${ROMDIR:-./roms}
@@ -35,9 +35,9 @@ cp "$BUILD/testipl.dat" "$ROMDIR/tmp/iplromco.dat"
 rm -rf "$ROMDIR/tmp"
 
 if [ "${1:-window}" = "exbios" ]; then
-  # The exbios build is a complete IPL in its own right, for the ace profile --
-  # MAME wants it called iplrom.dat and run on the x68000 machine, not the
-  # Compact's x68kxvi/ipl12 that every other mode here uses.
+  # The exbios build is a complete IPL in its own right, for the ace profile:
+  # MAME wants it called iplrom.dat on the x68000 machine, not the Compact's
+  # x68kxvi/ipl12 that every other mode here uses.
   BUILD=${BUILD_SET:-../build-exbios}
   ROMDIR=./roms_exbios_win
   rm -rf "$ROMDIR"; mkdir -p "$ROMDIR/tmp"
@@ -51,8 +51,8 @@ if [ "${1:-window}" = "exbios" ]; then
 fi
 
 COMMON="x68kxvi -rompath $ROMDIR -bios ipl12 -ram $RAM"
-# Everything except the window mode runs on SDL's dummy video driver, so MAME
-# never opens a window or steals focus.  -video none alone does not prevent it.
+# Everything but the window mode runs on SDL's dummy video driver, so MAME never
+# opens a window or steals focus.  -video none alone does not prevent it.
 [ "${1:-window}" = "window" ] || export SDL_VIDEODRIVER=dummy
 HEADLESS="-video none -sound none -window -nomaximize -nothrottle"
 

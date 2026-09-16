@@ -1,7 +1,6 @@
 #!/bin/sh
-# Fetch and build vasm (m68k, Motorola syntax) into tools/.
-# build.py picks it up from there automatically, so this is all that is needed
-# to make the project buildable on a fresh machine.
+# Fetch and build vasm (m68k, Motorola syntax) into tools/, where build.py
+# picks it up automatically.
 set -e
 cd "$(dirname "$0")"
 mkdir -p tools
