@@ -106,16 +106,44 @@ echo "=== an optional test that faults reports SKIP, not FAIL ==="
 # fault_handler unwinds straight to run_test's .fault, so the test's own movem
 # restore never runs and the fault verdict cannot live in a register a test
 # might be using.  Point sprite RAM at an odd address so the test is guaranteed
-# to fault, and check the verdict is SKIP rather than FAIL.
-sed -e 's/^SPRRAM          equ     \$EB8000/SPRRAM          equ     $EB8001/' \
-    -e 's/^SPRRAM_END      equ     \$EC0000/SPRRAM_END      equ     $EC0001/' \
-    ../x68testipl.s > /tmp/sprfault.s
-( cd .. && python3 build.py --src /tmp/sprfault.s --out test/build_sprfault ) >/dev/null
+# to fault, and check the verdict is SKIP rather than FAIL.  (Only meaningful
+# on a 68000/68010: the 68020 and up permit misaligned data accesses, so this
+# check proves nothing on x68030.)
+( cd .. && python3 build.py --cdefine SPRRAM=0xEB8001 --out test/build_sprfault ) >/dev/null
 mkrom roms_sprfault build_sprfault/testipl.dat
 printf '  faulting sprite test  '
 run roms_sprfault 2m screen.lua 60 | grep -E 'Sprite RAM' | tr -s ' ' | tr '\n' ' '; echo
-rm -rf roms_sprfault build_sprfault /tmp/sprfault.s
+rm -rf roms_sprfault build_sprfault
 
+
+echo
+echo "=== stack headroom ==="
+# Only 3840 bytes sit below the work area, and an overflow would be silent --
+# it runs into text VRAM rows nothing displays.  12m has the deepest path.
+printf '  12m  '
+run roms 12m stack.lua 45 | grep -E 'high-water' || echo "(no reading)"
+
+echo
+echo "=== screen matches the reference report ==="
+# The greps below cover about a dozen strings out of a 21-line report, so the
+# rest could drift unnoticed.  Diff the whole screen instead.  The ROM checksum
+# line is excluded: it is the image's own checksum and changes with every build.
+if [ -d golden ]; then
+  for sz in 1m 2m 4m 12m; do
+    printf '  %-4s ' "$sz"
+    run roms $sz screen.lua 40 | grep -v '^iplromco\|EXPECTED:\|FOUND:\|WARNING:' \
+      | sed 's/^ ROM checksum\.*.*/ ROM checksum <varies>/' > /tmp/scr_$sz.txt
+    sed 's/^ ROM checksum\.*.*/ ROM checksum <varies>/' golden/screen-$sz.txt > /tmp/gold_$sz.txt
+    if diff -q /tmp/scr_$sz.txt /tmp/gold_$sz.txt >/dev/null; then
+      echo "identical to golden"
+    else
+      echo "*** DIFFERS:"; diff /tmp/gold_$sz.txt /tmp/scr_$sz.txt | sed 's/^/      /'
+    fi
+    rm -f /tmp/scr_$sz.txt /tmp/gold_$sz.txt
+  done
+else
+  echo "  (no golden/ -- run ./capture-golden.sh against a known-good build)"
+fi
 
 echo
 echo "=== serial byte stream ==="

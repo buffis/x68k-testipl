@@ -10,8 +10,9 @@ Two build modes:
   machine. Contains no Sharp code and needs no ROM dumps to build.
 - **injected** (`--ipl FILE`) — rides along in the unprogrammed space of an
   existing 128 KB IPL, holds the report on screen (3 s, or 10 s if anything
-  failed) and then hands over, so the machine boots as normal. Stock Sharp,
-  exbios, anything else.
+  failed) and then hands over, so the machine boots as normal. Needs an image
+  with a large unprogrammed run: exbios and the X68030 IPL qualify, the stock
+  ACE/XVI/Compact IPLs no longer do.
 
 **No Sharp ROM content is redistributed here.** The source, the build and the
 prebuilt images in `bin/` are entirely original. An injected build or the MAME
@@ -78,20 +79,23 @@ which address, what a pass proves and what it does not.
 
 ## Build
 
-Needs Python 3 and [vasm](http://sun.hasenbraten.de/vasm/) built for
-m68k/Motorola syntax:
+The ROM is C plus a small assembly core, built with vasm, vbcc and vlink.
+`get-tools.sh` fetches and builds all three from source — no system packages:
 
 ```bash
-./get-vasm.sh        # fetches vasm, builds it, installs to tools/
+./get-tools.sh       # vasm + vbcc + vlink -> tools/
 python3 build.py     # standalone -> build/
 
 python3 build.py --ipl path/to/ipl.rom --out build-injected
 ```
 
-`--ipl` takes any 128 KB IPL image. It finds the largest unprogrammed run,
-assembles TEST-IPL to sit there, repoints the reset vector and records the
-IPL's own entry point to chain to; it refuses to inject over anything that is
-not fill. `--base ADDR` overrides the placement.
+`docs/TOOLCHAIN.md` covers the toolchain and its two sharp edges.
+
+`--ipl` takes a 128 KB IPL image. It finds the largest unprogrammed run, builds
+TEST-IPL to sit there, repoints the reset vector and records the IPL's own entry
+point to chain to; it refuses to inject over anything that is not fill, and
+refuses outright when the run is too small to be worth it. `--base ADDR`
+overrides the placement.
 
 Given an image split into halves, interleave them first — even is D15-D8, odd
 is D7-D0:
@@ -148,7 +152,9 @@ RAM=2m ./run-mame.sh screen
 ./tryinject.sh           # injected builds (needs an IPL image)
 ```
 
-`regress.sh` passes on MAME 0.289. `run-mame.sh` stages the rompath itself, so
+`regress.sh` passes on MAME 0.289. It diffs the whole report against reference
+output in `test/golden/`, which `capture-golden.sh` regenerates from a build you
+trust — the greps alone only cover a dozen strings out of a 21-line report. `run-mame.sh` stages the rompath itself, so
 there is nothing to set up first. To watch the tests go by rather than see only
 the end state, run MAME against that staged rompath directly:
 

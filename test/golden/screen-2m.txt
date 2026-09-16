@@ -1,0 +1,21 @@
+ SHARP X68000  TEST-IPL  v0.36
+ MFP MC68901.................. OK
+ CRTC video timing............ OK
+ RTC RP5C15................... OK
+ RTC oscillator............... OK
+ DMAC HD63450................. OK
+ OPM YM2151................... OK
+ PPI i8255.................... OK
+ FDC uPD72065................. OK
+ SCSI MB89352................. OK
+ ROM checksum................. OK (C13644B2)
+ CGROM checksum............... OK (13C64BFE)
+ Text VRAM.................... OK
+ Graphic VRAM................. OK
+ Sprite RAM................... OK
+ SRAM signature............... OK
+ Main RAM size................ 2048K
+ Main RAM..................... OK
+ Main RAM vs SRAM............. OK
+ ALL TESTS PASSED
+ Testing done! You can shut down the computer.
