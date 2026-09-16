@@ -51,6 +51,10 @@ supply your own dumps — see [Running the tests](#running-the-tests).
  Testing done! You can shut down the computer.
 ```
 
+That is an ACE/PRO/EXPERT, which is why `SCSI MB89352` reads SKIP — those
+machines have SASI at `$E96000` and nothing at `$E96020`. A SUPER, XVI,
+Compact or X68030 reports OK there.
+
 Every line is mirrored to the RS-232C port.
 
 The two checksum lines print their value in brackets as well as a verdict. The
