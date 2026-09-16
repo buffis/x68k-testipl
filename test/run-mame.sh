@@ -30,7 +30,7 @@ rm -rf "$ROMDIR/tmp" "$ROMDIR/x68kxvi.zip"
 mkdir -p "$ROMDIR/tmp"
 cp "$STOCK"/cgrom.dat "$STOCK"/iplrom*.dat "$STOCK"/*.bin "$STOCK"/*.ic11 \
    "$STOCK"/*.ic12 "$ROMDIR/tmp/" 2>/dev/null || true
-cp "$BUILD/ipl_testipl.dat" "$ROMDIR/tmp/iplromco.dat"
+cp "$BUILD/testipl.dat" "$ROMDIR/tmp/iplromco.dat"
 ( cd "$ROMDIR/tmp" && zip -q -j ../x68kxvi.zip ./* )
 rm -rf "$ROMDIR/tmp"
 
@@ -43,7 +43,7 @@ if [ "${1:-window}" = "exbios" ]; then
   rm -rf "$ROMDIR"; mkdir -p "$ROMDIR/tmp"
   cp "$STOCK"/cgrom.dat "$STOCK"/iplrom*.dat "$STOCK"/*.bin "$STOCK"/*.ic11 \
      "$STOCK"/*.ic12 "$ROMDIR/tmp/" 2>/dev/null || true
-  cp "$BUILD/ipl_testipl.dat" "$ROMDIR/tmp/iplrom.dat"
+  cp "$BUILD/testipl.dat" "$ROMDIR/tmp/iplrom.dat"
   ( cd "$ROMDIR/tmp" && zip -q -j ../x68000.zip ./* )
   rm -rf "$ROMDIR/tmp"
   exec mame x68000 -rompath "$ROMDIR" -bios ipl10 -ram "$RAM" \

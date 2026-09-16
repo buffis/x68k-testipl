@@ -12,7 +12,7 @@ cd "$(dirname "$0")"
 # takes focus.  SDL's dummy video driver stops it reaching the display at all.
 export SDL_VIDEODRIVER=dummy
 STOCK=../../x68kxvi
-ROM=${ROM:-../build/ipl_testipl.dat}
+ROM=${ROM:-../build/testipl.dat}
 
 for spec in "xvi:x68kxvi:ipl11:iplromxv.dat" \
             "ace:x68000:ipl10:iplrom.dat" \

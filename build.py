@@ -189,10 +189,10 @@ def main():
     put32(rom, inj + ROMSUM_OFF, rom_sum)
 
     # --- emit ----------------------------------------------------------------
-    (out / "ipl_testipl.dat").write_bytes(rom)
+    (out / "testipl.dat").write_bytes(rom)
     # even = D15-D8 = IC12, odd = D7-D0 = IC11
-    (out / "ipl_testipl_even.bin").write_bytes(bytes(rom[0::2]))
-    (out / "ipl_testipl_odd.bin").write_bytes(bytes(rom[1::2]))
+    (out / "testipl_even.bin").write_bytes(bytes(rom[0::2]))
+    (out / "testipl_odd.bin").write_bytes(bytes(rom[1::2]))
 
     if ipl is None:
         spare = IPL_LEN - len(payload) - 0x10  # minus the vectors at the front
@@ -209,7 +209,7 @@ def main():
     print(f"reset PC          ${testipl_base:08X}")
     print(f"ROM checksum      ${rom_sum:08X}")
     print()
-    for name in ("ipl_testipl.dat", "ipl_testipl_even.bin", "ipl_testipl_odd.bin"):
+    for name in ("testipl.dat", "testipl_even.bin", "testipl_odd.bin"):
         p = out / name
         print(f"  {name:24} {p.stat().st_size:8d} bytes")
 

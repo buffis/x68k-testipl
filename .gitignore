@@ -1,5 +1,5 @@
 # Third-party ROM images.  Not ours to redistribute, and an injected build's
-# ipl_testipl.dat embeds the whole IPL it was injected into -- so build-exbios/
+# testipl.dat embeds the whole IPL it was injected into -- so build-exbios/
 # and test/build_inj_*/ hold derivative ROM images, not clean output.
 exbios/
 build-exbios/

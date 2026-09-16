@@ -37,7 +37,7 @@ run () {  # run <romdir> <ram-slot> <script> <seconds>
     | grep -viE 'wrong|expected:|found:|warning|iplromco|average'
 }
 
-mkrom roms "$BUILD/ipl_testipl.dat"
+mkrom roms "$BUILD/testipl.dat"
 mkrom roms_stock
 
 # Boot the stock ROM once so SRAM is initialised.  Our ROM never writes it --
@@ -65,7 +65,7 @@ echo "=== injected faults must be detected ==="
 # both fails and reports a different value.
 cgline () { sed -n 's/^ *CGROM checksum\.*  *//p'; }
 base_cg=$(run roms 2m screen.lua 20 | cgline)
-mkrom roms_cg "$BUILD/ipl_testipl.dat"
+mkrom roms_cg "$BUILD/testipl.dat"
 ( cd roms_cg && mkdir t && cd t && unzip -q ../x68kxvi.zip \
   && python3 -c "
 import pathlib
@@ -84,7 +84,7 @@ case "$flip_cg" in
   *)     echo "*** FAILED: got [$flip_cg], expected FAIL" ;;
 esac
 
-cp "$BUILD/ipl_testipl.dat" /tmp/ipl_bad.dat
+cp "$BUILD/testipl.dat" /tmp/ipl_bad.dat
 python3 -c "
 import pathlib
 p=pathlib.Path('/tmp/ipl_bad.dat'); d=bytearray(p.read_bytes()); d[0x18000]^=1; p.write_bytes(d)"
@@ -121,7 +121,7 @@ sed -e 's/^SPRRAM          equ     \$EB8000/SPRRAM          equ     $EB8001/' \
     -e 's/^SPRRAM_END      equ     \$EC0000/SPRRAM_END      equ     $EC0001/' \
     ../x68testipl.s > /tmp/sprfault.s
 ( cd .. && python3 build.py --src /tmp/sprfault.s --out test/build_sprfault ) >/dev/null
-mkrom roms_sprfault build_sprfault/ipl_testipl.dat
+mkrom roms_sprfault build_sprfault/testipl.dat
 printf '  faulting sprite test  '
 run roms_sprfault 2m screen.lua 60 | grep -E 'Sprite RAM' | tr -s ' ' | tr '\n' ' '; echo
 rm -rf roms_sprfault build_sprfault /tmp/sprfault.s

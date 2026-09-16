@@ -42,7 +42,7 @@ for spec in "exbios:exbios/exbios_v1.34.24_220429.rom:x68000:ipl10:iplrom.dat" \
   mame $mach -rompath ./${d}_stock -bios $bios -ram 4m -video none -sound none \
     -window -nomaximize -nothrottle -seconds_to_run 14 >/dev/null 2>&1 || true
 
-  cp $bdir/ipl_testipl.dat $d/tmp/$iplname
+  cp $bdir/testipl.dat $d/tmp/$iplname
   ( cd $d/tmp && zip -q -j ../$mach.zip ./* )
   rm -rf $d/tmp
 

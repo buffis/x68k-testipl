@@ -74,12 +74,12 @@ python3 build.py --ipl path/to/ipl.rom --out build-injected
 ```
 
 Prebuilt standalone images are in `bin/` if you only want to burn a ROM:
-`ipl_testipl_even.bin` (IC12, D15-D8) and `ipl_testipl_odd.bin` (IC11, D7-D0),
-plus the combined `ipl_testipl.dat` for MAME.
+`testipl_even.bin` (IC12, D15-D8) and `testipl_odd.bin` (IC11, D7-D0), plus
+the combined `testipl.dat` for MAME.
 
 `--ipl` takes any 128 KB IPL image. It finds the largest unprogrammed run in
-that image, assembles TEST-IPL to sit there, repoints the reset vector at it
-and records the IPL's own entry point to chain to — nothing is hand-maintained per
+that image, assembles TEST-IPL to sit there, repoints the reset vector at it and
+records the IPL's own entry point to chain to — nothing is hand-maintained per
 image, and it refuses to inject over anything that is not fill. `--base ADDR`
 overrides the placement if you need it.
 
@@ -95,9 +95,9 @@ Outputs:
 
 | file | use |
 |---|---|
-| `ipl_testipl.dat` | the 128 KB ROM image |
-| `ipl_testipl_even.bin` | D15-D8, the **even** device |
-| `ipl_testipl_odd.bin` | D7-D0, the **odd** device |
+| `testipl.dat` | the 128 KB ROM image |
+| `testipl_even.bin` | D15-D8, the **even** device |
+| `testipl_odd.bin` | D7-D0, the **odd** device |
 
 Write to two 27C512-class EPROMs, 64 KB each.
 
