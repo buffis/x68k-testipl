@@ -25,6 +25,9 @@ tools/
 
 __pycache__/
 
+# Local notes for coding agents.  Useful here, not part of the project.
+CLAUDE.md
+
 # Editor and OS noise.  ._* are macOS AppleDouble resource forks, which this
 # tree is full of after a round trip through a Mac.
 ._*
