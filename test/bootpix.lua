@@ -8,8 +8,8 @@
 -- This checksums the actual pixel values instead.
 --
 -- A fixed frame number cannot be used either: the injected build spends ~14 s
--- in the POST first, so the two runs would be sampled at different points of
--- the boot.  Find when the IPL actually starts -- the POST lives below $FF0000
+-- in TEST-IPL first, so the two runs would be sampled at different points of
+-- the boot.  Find when the IPL actually starts -- TEST-IPL lives below $FF0000
 -- and the IPL at or above it -- and sample a fixed interval after that.
 local SETTLE = 2090            -- frames after the IPL starts, ~38 s
 local mem = manager.machine.devices[":maincpu"].spaces["program"]

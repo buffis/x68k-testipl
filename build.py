@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Build the X68000 POST ROM.
+Build the X68000 TEST-IPL ROM.
 
 Two modes:
 
   standalone (default)
-      Pads the assembled POST into a complete 128K image with the reset vector
-      pointing at it.  It tests the machine, reports, and offers a rerun; it
-      boots nothing, so the output contains only code from x68post.s.
+      Pads the assembled TEST-IPL into a complete 128K image with the reset
+      vector pointing at it.  It tests the machine, reports, and offers a rerun; it
+      boots nothing, so the output contains only code from x68testipl.s.
 
   injected (--ipl FILE)
-      Puts the POST into the unprogrammed space of an existing 128K IPL image,
+      Puts TEST-IPL into the unprogrammed space of an existing 128K IPL image,
       repoints the reset vector at it, and hands over to that IPL's original
       entry point when the tests are done.  Any IPL image works -- stock Sharp,
       exbios, anything else -- so long as it is 128K with a sane reset vector.
@@ -32,12 +32,12 @@ IPL_BASE = 0xFE0000       # the IPL ROM window: $FE0000-$FFFFFF
 IPL_LEN = 0x20000         # 128K, two 27C512-class devices
 RESET_SSP_ADDR = 0xFF0000  # the 68000 fetches SSP from here at reset
 RESET_PC_ADDR = 0xFF0004   # ...and its reset PC from here
-POST_BASE = 0xFF0010       # code starts just past the two reset longwords
-STACK_TOP = 0xE7FF00       # initial SSP; the POST re-derives its own anyway
+TESTIPL_BASE = 0xFF0010    # code starts just past the two reset longwords
+STACK_TOP = 0xE7FF00       # initial SSP; TEST-IPL re-derives its own anyway
 FILL = 0xFF                # unprogrammed EPROM
 
-ROMSUM_OFF = 4  # offset within the POST payload of the checksum field
-                # (see the header comment in x68post.s)
+ROMSUM_OFF = 4  # offset within the TEST-IPL payload of the checksum field
+                # (see the header comment in x68testipl.s)
 
 # Test-harness metadata only -- the ROM image itself is model independent.
 # MAME wants our image under the filename that machine's BIOS expects.
@@ -105,7 +105,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="build")
     ap.add_argument("--vasm", default="./tools/vasmm68k_mot")
-    ap.add_argument("--src", default="x68post.s")
+    ap.add_argument("--src", default="x68testipl.s")
     ap.add_argument("--ipl", metavar="FILE",
                     help="inject into this 128K IPL image and chain to it when "
                          "the tests finish, instead of building standalone")
@@ -116,14 +116,14 @@ def main():
 
     # The checksum loop walks the ROM a longword at a time and skips the single
     # longword holding its own expected value, so that field has to be aligned.
-    assert POST_BASE % 4 == 0, "POST_BASE must be longword aligned"
-    assert (POST_BASE + ROMSUM_OFF) % 4 == 0
+    assert TESTIPL_BASE % 4 == 0, "TESTIPL_BASE must be longword aligned"
+    assert (TESTIPL_BASE + ROMSUM_OFF) % 4 == 0
 
     out = pathlib.Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
     ipl = None
-    post_base = POST_BASE
+    testipl_base = TESTIPL_BASE
     chain_to = None
     if args.ipl:
         ipl = bytearray(pathlib.Path(args.ipl).read_bytes())
@@ -135,16 +135,16 @@ def main():
             sys.exit(f"{args.ipl} has reset PC ${chain_to:08X}, which is outside "
                      f"the ROM window ${IPL_BASE:06X}-${IPL_BASE+IPL_LEN-1:06X} "
                      f"-- this does not look like an IPL image")
-        post_base = args.base if args.base is not None else find_free(ipl)
-        if post_base % 4:
-            sys.exit(f"injection address ${post_base:06X} is not longword aligned")
+        testipl_base = args.base if args.base is not None else find_free(ipl)
+        if testipl_base % 4:
+            sys.exit(f"injection address ${testipl_base:06X} is not longword aligned")
 
     # --- assemble ------------------------------------------------------------
-    payload_path = out / "x68post.bin"
-    cmd = [args.vasm, "-Fbin", "-m68000", "-quiet", f"-DPOST_BASE={post_base}"]
+    payload_path = out / "x68testipl.bin"
+    cmd = [args.vasm, "-Fbin", "-m68000", "-quiet", f"-DTESTIPL_BASE={testipl_base}"]
     if chain_to is not None:
         cmd.append(f"-DIPL_ENTRY={chain_to}")
-    cmd += ["-o", str(payload_path), "-L", str(out / "x68post.lst"), args.src]
+    cmd += ["-o", str(payload_path), "-L", str(out / "x68testipl.lst"), args.src]
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
         sys.stderr.write(proc.stdout + proc.stderr)
@@ -156,17 +156,17 @@ def main():
         payload.append(FILL)
 
     # --- lay out the ROM image ----------------------------------------------
-    inj = post_base - IPL_BASE
+    inj = testipl_base - IPL_BASE
     end = inj + len(payload)
     if end > IPL_LEN:
         sys.exit(f"payload is {len(payload)} bytes and does not fit: "
-                 f"${post_base:06X}+{len(payload)} runs past ${IPL_BASE+IPL_LEN-1:06X}")
+                 f"${testipl_base:06X}+{len(payload)} runs past ${IPL_BASE+IPL_LEN-1:06X}")
 
     if ipl is None:
         rom = bytearray([FILL]) * IPL_LEN
         rom[inj:end] = payload
         # The reset vector is the whole of the hand-off: the 68000 takes SSP and
-        # PC from these two longwords and the POST does the rest itself.
+        # PC from these two longwords and the TEST-IPL does the rest itself.
         put32(rom, RESET_SSP_ADDR - IPL_BASE, STACK_TOP)
     else:
         # Refuse to inject over anything that is not fill: better a loud failure
@@ -181,7 +181,7 @@ def main():
         rom[inj:end] = payload
         # The IPL's own SSP is left alone; only the PC is taken over.
 
-    put32(rom, RESET_PC_ADDR - IPL_BASE, post_base)
+    put32(rom, RESET_PC_ADDR - IPL_BASE, testipl_base)
 
     # --- fill in the ROM self-check ------------------------------------------
     # Computed last, over the finished image, skipping the field that stores it.
@@ -189,27 +189,27 @@ def main():
     put32(rom, inj + ROMSUM_OFF, rom_sum)
 
     # --- emit ----------------------------------------------------------------
-    (out / "ipl_post.dat").write_bytes(rom)
+    (out / "ipl_testipl.dat").write_bytes(rom)
     # even = D15-D8 = IC12, odd = D7-D0 = IC11
-    (out / "ipl_post_even.bin").write_bytes(bytes(rom[0::2]))
-    (out / "ipl_post_odd.bin").write_bytes(bytes(rom[1::2]))
+    (out / "ipl_testipl_even.bin").write_bytes(bytes(rom[0::2]))
+    (out / "ipl_testipl_odd.bin").write_bytes(bytes(rom[1::2]))
 
     if ipl is None:
         spare = IPL_LEN - len(payload) - 0x10  # minus the vectors at the front
-        print(f"standalone POST ROM")
-        print(f"POST payload      {len(payload):6d} bytes  "
-              f"${post_base:06X}-${IPL_BASE + end - 1:06X}  "
+        print("standalone TEST-IPL ROM")
+        print(f"TEST-IPL payload  {len(payload):6d} bytes  "
+              f"${testipl_base:06X}-${IPL_BASE + end - 1:06X}  "
               f"({spare} bytes spare)")
         print(f"reset SSP         ${STACK_TOP:08X}")
     else:
-        print(f"POST injected into {args.ipl}")
-        print(f"POST payload      {len(payload):6d} bytes  "
-              f"${post_base:06X}-${IPL_BASE + end - 1:06X}")
+        print(f"TEST-IPL injected into {args.ipl}")
+        print(f"TEST-IPL payload  {len(payload):6d} bytes  "
+              f"${testipl_base:06X}-${IPL_BASE + end - 1:06X}")
         print(f"chains to         ${chain_to:08X}  (the IPL's own reset PC)")
-    print(f"reset PC          ${post_base:08X}")
+    print(f"reset PC          ${testipl_base:08X}")
     print(f"ROM checksum      ${rom_sum:08X}")
     print()
-    for name in ("ipl_post.dat", "ipl_post_even.bin", "ipl_post_odd.bin"):
+    for name in ("ipl_testipl.dat", "ipl_testipl_even.bin", "ipl_testipl_odd.bin"):
         p = out / name
         print(f"  {name:24} {p.stat().st_size:8d} bytes")
 

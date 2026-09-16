@@ -1,4 +1,4 @@
-# What each POST line actually tests
+# What each TEST-IPL line actually tests
 
 Every line of the report, in the order it prints, with the reasoning behind it.
 The short version lives in the README's table; this is the long one — what is
@@ -91,7 +91,7 @@ several times faster on an X68030, which made its "one second" far too short to
 see the clock move and failed this test on a perfectly good machine. Video
 frames are ~55 Hz whatever the CPU is doing, so counting them measures real
 time. Every step of `wait_frames` is bounded at 200,000 spins, so a CRTC that is
-not scanning cannot hang the POST — it returns "not real time" and the test
+not scanning cannot hang the run — it returns "not real time" and the test
 falls back to `delay_seconds`, and a machine in that state has already failed
 the video timing line above.
 
@@ -140,8 +140,8 @@ Reads the main status register at `FDC+1`, masks `$D0`, and requires exactly
 `$80`: RQM set (ready for a command byte), DIO clear (direction is host to FDC),
 not busy. That is the defined idle state of the controller.
 
-Passive by design — no command is issued. A POST between reset and handover
-cannot safely drive a seek.
+Passive by design — no command is issued. A self test between reset and
+handover cannot safely drive a seek.
 
 ### `SCSI MB89352` — optional
 
@@ -180,20 +180,20 @@ Because the ROM sums *itself*, this verifies the EPROM burn — a dropped bit, a
 bad socket, a mis-programmed device. It is explicitly **not a test of the
 machine**: the machine's own IPL is out of its socket while this ROM is in it.
 
-### `CGROM checksum` — reported as a value, not judged
+### `CGROM checksum`
 
-`$F00000`, 768 KB. Sums 196,608 longwords (3 x 65536) and prints the result in
-hex.
+`$F00000`, 768 KB. Sums 196,608 longwords (3 x 65536) and compares the result
+against `CGROM_SUM` in the source. The value is printed in brackets after the
+verdict either way, so a mismatch gives you a number to record rather than a
+bare FAIL.
 
-There is no verdict because more than one CGROM revision exists and this ROM
-deliberately carries no copy of Sharp's to compare against, so a verdict would
-be a guess — it was the likeliest source of a false FAIL on a healthy machine.
-The value is stable for a given machine, so record it and compare against
-another of the same model.
-
-A real X68000 PRO reads `13C64BFE`, which matches the CGROM image MAME's `x68000` set
-uses byte for byte — so that dump and that machine carry the same revision. If
-your machine reports something else, it is not necessarily a fault; record it.
+The expected value is `13C64BFE`. A real X68000 PRO reads it, and it matches the
+CGROM image MAME's sets use byte for byte — MAME defines a single `cgrom.dat`
+(CRC `9f3195f1`) shared by all four emulated machines. This test was reported
+rather than judged for a while, on the theory that multiple CGROM revisions were
+in circulation and a verdict would risk a false FAIL; no second revision has
+actually turned up, so it is judged now. If yours differs, record the value
+before assuming the chip is bad.
 
 ### `Text VRAM`
 

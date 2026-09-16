@@ -1,4 +1,4 @@
--- Print the POST result screen as text.
+-- Print the TEST-IPL result screen as text.
 --
 -- The text plane holds bitmaps, not character codes, so this builds a reverse
 -- lookup from the CGROM 8x16 font and matches each 8x16 cell against it.  It
@@ -27,7 +27,7 @@ local n, shown = 0, false
 _G.keep = emu.add_machine_frame_notifier(function ()
   n = n + 1
   if shown or n % 11 ~= 0 then return end
-  -- The POST is done when the cursor stops advancing.  Keying this to a fixed
+  -- The run is done when the cursor stops advancing.  Keying this to a fixed
   -- row breaks whenever a test is added or removed.
   --
   -- Watch the column as well: a long test that prints progress marks advances

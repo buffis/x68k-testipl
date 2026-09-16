@@ -1,4 +1,4 @@
-# Sharp X68000 POST ROM
+# Sharp X68000 TEST-IPL ROM
 
 A standalone power-on self test for the X68000 family. It tests memory and the
 memory-mapped devices, reports on screen and over RS-232C, and stops.
@@ -26,37 +26,39 @@ supply your own dumps — see [Running the tests](#running-the-tests).
 ## Example run:
 
 ```
-SHARP X68000  POST  v0.36
+ SHARP X68000  TEST-IPL  v0.36
 
-MFP MC68901................... OK
-CRTC video timing............. OK
-RTC RP5C15.................... OK
-RTC oscillator................ OK
-DMAC HD63450.................. OK
-OPM YM2151.................... OK
-PPI i8255..................... OK
-FDC uPD72065.................. OK
-SCSI MB89352.................. SKIP
-ROM checksum.................. OK
-CGROM checksum................ 13C64BFE
-Text VRAM..................... OK
-Graphic VRAM.................. OK
-Sprite RAM.................... OK
-SRAM signature................ OK
-Main RAM size................. 4096K
-Main RAM...................... OK
-Main RAM vs SRAM.............. OK
+ MFP MC68901.................. OK
+ CRTC video timing............ OK
+ RTC RP5C15................... OK
+ RTC oscillator............... OK
+ DMAC HD63450................. OK
+ OPM YM2151................... OK
+ PPI i8255.................... OK
+ FDC uPD72065................. OK
+ SCSI MB89352................. SKIP
+ ROM checksum................. OK (C13644B2)
+ CGROM checksum............... OK (13C64BFE)
+ Text VRAM.................... OK
+ Graphic VRAM................. OK
+ Sprite RAM................... OK
+ SRAM signature............... OK
+ Main RAM size................ 4096K
+ Main RAM..................... OK
+ Main RAM vs SRAM............. OK
 
-ALL TESTS PASSED
-POST complete -- halted.  Power off to swap ROMs
+ ALL TESTS PASSED
+ Testing done! You can shut down the computer.
 ```
 
 Every line is mirrored to the RS-232C port.
 
-CGROM is reported as a checksum rather than judged: more than one CGROM revision
-exists and this ROM carries no copy of Sharp's to compare against, so a verdict
-would be a guess. The value is stable for a given machine — record it and
-compare against another of the same model.
+The two checksum lines print their value in brackets as well as a verdict. The
+ROM checksum is the image's own, so it should match what `build.py` printed when
+you built it. CGROM is judged against `13C64BFE`, the value every dump in
+circulation carries and the one a real X68000 PRO reads. A machine reporting
+something else is worth recording rather than assuming faulty — but it is no
+longer silently waved through.
 
 ## Build
 
@@ -72,12 +74,12 @@ python3 build.py --ipl path/to/ipl.rom --out build-injected
 ```
 
 Prebuilt standalone images are in `bin/` if you only want to burn a ROM:
-`ipl_post_even.bin` (IC12, D15-D8) and `ipl_post_odd.bin` (IC11, D7-D0), plus
-the combined `ipl_post.dat` for MAME.
+`ipl_testipl_even.bin` (IC12, D15-D8) and `ipl_testipl_odd.bin` (IC11, D7-D0),
+plus the combined `ipl_testipl.dat` for MAME.
 
 `--ipl` takes any 128 KB IPL image. It finds the largest unprogrammed run in
-that image, assembles the POST to sit there, repoints the reset vector at it and
-records the IPL's own entry point to chain to — nothing is hand-maintained per
+that image, assembles TEST-IPL to sit there, repoints the reset vector at it
+and records the IPL's own entry point to chain to — nothing is hand-maintained per
 image, and it refuses to inject over anything that is not fill. `--base ADDR`
 overrides the placement if you need it.
 
@@ -93,9 +95,9 @@ Outputs:
 
 | file | use |
 |---|---|
-| `ipl_post.dat` | the 128 KB ROM image |
-| `ipl_post_even.bin` | D15-D8, the **even** device |
-| `ipl_post_odd.bin` | D7-D0, the **odd** device |
+| `ipl_testipl.dat` | the 128 KB ROM image |
+| `ipl_testipl_even.bin` | D15-D8, the **even** device |
+| `ipl_testipl_odd.bin` | D7-D0, the **odd** device |
 
 Write to two 27C512-class EPROMs, 64 KB each.
 
@@ -110,8 +112,8 @@ written at which address, what a pass proves, and what it does not.
 
 `test/tryall.sh` runs all tests from the one image, and `test/tryinject.sh`
 covers the injected builds: that the payload lands in unprogrammed space, that
-the POST runs, that the machine reaches the IPL unattended, and that it boots to
-a screen identical to the same IPL with no POST in it.
+the tests run, that the machine reaches the IPL unattended, and that it boots
+to a screen identical to the same IPL with nothing injected.
 
 ### Failures name an address
 
@@ -119,16 +121,16 @@ A `FAIL` from any of the memory tests is followed by an indented line saying
 where and how, because "some RAM is bad" is not actionable and a bit number is:
 
 ```
-Main RAM..................... FAIL
-  $00080000 exp $5A52A5A5 got $5B52A5A5
+ Main RAM..................... FAIL
+   $00080000 exp $5A52A5A5 got $5B52A5A5
 ```
 
 or, when the fault is the chip on a megabyte boundary that made sizing stop
 early, the mask of every bit that misbehaved:
 
 ```
-Main RAM..................... FAIL
-  $00100000 stuck bits $00400040
+ Main RAM size................ FAIL
+   $00100000 stuck bits $00400040
 ```
 
 The differing bits map straight onto the devices in that bank.
@@ -142,8 +144,8 @@ the text would appear without all of them working.
 > **You need your own Sharp ROM dumps for this.** See
 > [Running the tests](#running-the-tests) — they are not included here.
 
-`test/run-mame.sh` stages a rompath with the POST image swapped in and launches
-MAME on it, so there is nothing to set up first:
+`test/run-mame.sh` stages a rompath with the TEST-IPL image swapped in and
+launches MAME on it, so there is nothing to set up first:
 
 ```bash
 cd test
@@ -154,7 +156,7 @@ cd test
 RAM=12m ./run-mame.sh    # a different memory fit (lowercase: -ram 12m)
 ```
 
-The POST halts with the results on screen, so there is no rush to read them. To
+TEST-IPL halts with the results on screen, so there is no rush to read them. To
 watch the tests go by rather than see only the end state, pass MAME's `-speed`
 through by running it directly against the rompath the script staged:
 

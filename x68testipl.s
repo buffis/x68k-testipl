@@ -1,5 +1,5 @@
 ;-----------------------------------------------------------------------------
-; x68post.s -- Power-On Self Test for the Sharp X68000 family
+; x68testipl.s -- TEST-IPL, a power-on self test for the Sharp X68000 family
 ;
 ; Assembles with vasm (Motorola syntax) to a raw binary that build.py pads into
 ; a 128K IPL ROM image.  Takes the machine at reset, runs the tests, reports on
@@ -9,7 +9,7 @@
 ;   * It runs at reset, so nothing is initialised: no stack, no vector table,
 ;     no video, no RAM.  Main RAM is under test, so the stack must not live
 ;     there -- off-screen text VRAM is used instead.
-;   * Absolute, position-dependent code.  POST_BASE must match build.py.
+;   * Absolute, position-dependent code.  TESTIPL_BASE must match build.py.
 ;   * Nothing runs after us, so the tests are free to leave hardware dirty.
 ;
 ; docs/TESTS.md covers every report line in detail: what is read or written at
@@ -17,12 +17,12 @@
 ;-----------------------------------------------------------------------------
 
 ; Where the code sits in the ROM.  Normally supplied by build.py with
-; -DPOST_BASE=...; the default matches it.  The 68000 fetches SSP from $FF0000
-; and its reset PC from $FF0004, so the code starts just past those two
-; longwords.  POST_BASE must be 4-aligned: the ROM checksum loop skips its own
-; reference longword by address compare, which needs it on a longword boundary.
-                ifnd    POST_BASE
-POST_BASE       equ     $FF0010
+; -DTESTIPL_BASE=...; the default matches it.  The 68000 fetches SSP from
+; $FF0000 and its reset PC from $FF0004, so the code starts just past those two
+; longwords.  TESTIPL_BASE must be 4-aligned: the ROM checksum loop skips its
+; own reference longword by address compare, which needs a longword boundary.
+                ifnd    TESTIPL_BASE
+TESTIPL_BASE    equ     $FF0010
                 endif
 
 ;--- hardware ----------------------------------------------------------------
@@ -65,6 +65,8 @@ SPR_RES         equ     $EB0810
 SRAM            equ     $ED0000
 CGROM           equ     $F00000
 CGROM_LEN       equ     $C0000
+; Confirmed on a real PRO and identical in every dump in circulation.
+CGROM_SUM       equ     $13C64BFE
 ANK8X16         equ     $F3A800         ; 8x16 half-width font, 16 bytes/char
 IPLROM          equ     $FE0000
 IPLROM_LEN      equ     $20000
@@ -85,13 +87,18 @@ COL_NORMAL      equ     1               ; plane 0        -> white
 COL_GOOD        equ     2               ; plane 1        -> green
 COL_BAD         equ     3               ; plane 0 and 1  -> red
 RESULT_COL      equ     30              ; column every verdict lands on
+; Every line starts one column in.  A real X68000 monitor overscans, and the
+; leftmost column is the one that gets cut off on a badly adjusted set.
+LEFT_MARGIN     equ     1
 
 ;--- stack and work area, in the reserved top 4K of text VRAM -----------------
 ; Both start at the same address: the stack grows down from it, the work area
 ; grows up.  Main RAM is under test and graphic VRAM folds onto itself, so text
 ; VRAM is the only memory here that is flat and not a test subject.
 STACK_TOP       equ     $E7FF00         ; grows down through $E7F000-$E7FEFF
-WORK            equ     $E7FF00         ; grows up through $E7FF00-$E7FF2D
+; w_col and w_row must stay at WORK+0 and WORK+2: the MAME harness scripts read
+; the cursor straight out of $E7FF00/$E7FF02 to tell when a run has finished.
+WORK            equ     $E7FF00         ; grows up through $E7FF00-$E7FF33
 w_col           equ     WORK+0          ; word  cursor column
 w_row           equ     WORK+2          ; word  cursor row
 w_fail          equ     WORK+4          ; word  failure count
@@ -102,14 +109,18 @@ w_progcol       equ     WORK+12         ; word  column a run of progress marks
                                         ;       began at, $FFFF when none is open
 w_addrcol       equ     WORK+14         ; word  column test_dram's address field
                                         ;       sits at, $FFFF when none is open
-w_ramsize       equ     WORK+16         ; long  detected main RAM bytes
 ; Detail for the line under a FAIL.  run_test clears w_fdetail before every
 ; test, so a test that sets it owns the line and nothing stale survives.
-w_fdetail       equ     WORK+20         ; word  kind: 0 none, 1 exp/got, 2 stuck
-w_faddr         equ     WORK+22         ; long  address of the first bad longword
-w_fexp          equ     WORK+26         ; long  what should have been there
-w_fgot          equ     WORK+30         ; long  what was actually read
-w_buf           equ     WORK+34         ; string scratch, built backwards from
+w_fdetail       equ     WORK+16         ; word  kind: 0 none, 1 exp/got, 2 stuck
+; A checksum to show in brackets after the verdict, e.g. OK (13C64BFE).  Also
+; cleared by run_test, so only the test that sets it owns the brackets.
+w_sumshow       equ     WORK+18         ; word  non-zero to print w_sum
+w_ramsize       equ     WORK+20         ; long  detected main RAM bytes
+w_faddr         equ     WORK+24         ; long  address of the first bad longword
+w_fexp          equ     WORK+28         ; long  what should have been there
+w_fgot          equ     WORK+32         ; long  what was actually read
+w_sum           equ     WORK+36         ; long  checksum to print in brackets
+w_buf           equ     WORK+40         ; string scratch, built backwards from
 w_buf_end       equ     w_buf+12        ;   the end: 11 digits plus a terminator
 
 MEM_XOR         equ     $5A5AA5A5       ; address-derived fill pattern
@@ -138,7 +149,7 @@ probe_stack     macro
                 lea     STACK_TOP,a7
                 endm
 
-                org     POST_BASE
+                org     TESTIPL_BASE
 
 ;=============================================================================
 ; header -- fixed layout so build.py can patch the checksum without reading
@@ -146,13 +157,13 @@ probe_stack     macro
 ;   +0  branch to the entry point (the reset vector points here)
 ;   +4  expected ROM checksum
 ;=============================================================================
-                bra.w   post_entry
+                bra.w   testipl_entry
 romsum_ref:     dc.l    0
 
 ;=============================================================================
 ; entry
 ;=============================================================================
-post_entry:
+testipl_entry:
                 move.w  #$2700,sr               ; supervisor, interrupts off
                 reset                           ; reset external devices
 
@@ -237,10 +248,11 @@ post_entry:
 ; have to survive the whole of test_tvram unrefreshed.
                 clr.w   w_fail
                 clr.l   w_ramsize
-                clr.w   w_col
+                move.w  #LEFT_MARGIN,w_col
                 clr.w   w_row
                 move.w  #$FFFF,w_addrcol
                 move.w  #$FFFF,w_progcol
+                clr.w   w_sumshow
                 clr.w   w_fdetail               ; the Text VRAM line bypasses
                                                 ; run_test, so nothing else
                                                 ; would clear it
@@ -310,7 +322,9 @@ post_entry:
                 lea     test_romsum,a1
                 bsr     run_test
 
-                bsr     report_cgsum
+                lea     n_cgrom,a0
+                lea     test_cgrom,a1
+                bsr     run_test
 
 ; Verdict was worked out at startup, before anything could be printed; reported
 ; here with the rest of memory.
@@ -522,15 +536,11 @@ test_tvram:
                 rts
 
 ;--- CGROM checksum ----------------------------------------------------------
-; Reported, not judged.  More than one CGROM revision exists and this ROM
-; carries no copy of Sharp's to compare against, so a verdict would be a guess
-; -- it was the likeliest source of a false FAIL on a healthy machine.  The
-; value is stable for a given machine, so record it and compare against another
-; of the same model.
-report_cgsum:
-                movem.l d0-d2/a0,-(sp)
-                lea     n_cgrom,a0
-                bsr     line_start
+; Sums the whole 768K font ROM and compares against CGROM_SUM.  The value is
+; printed in brackets whichever way the verdict goes, so a machine carrying a
+; different revision gives you a number to record rather than a bare FAIL.
+test_cgrom:
+                movem.l d1-d2/a0,-(sp)
                 lea     CGROM,a0
                 moveq   #CGROM_LEN/$40000-1,d2  ; $40000 bytes per inner pass
                 moveq   #0,d0
@@ -539,11 +549,14 @@ report_cgsum:
 .loop:          add.l   (a0)+,d0
                 dbra    d1,.loop
                 dbra    d2,.chunk
-                moveq   #8,d2
-                bsr     print_hex
-                bsr     newline
-                bsr     serial_crlf
-                movem.l (sp)+,d0-d2/a0
+                move.l  d0,w_sum
+                move.w  #1,w_sumshow
+                cmp.l   #CGROM_SUM,d0
+                bne.s   .bad
+                moveq   #0,d0
+                bra.s   .out
+.bad:           moveq   #1,d0
+.out:           movem.l (sp)+,d1-d2/a0
                 rts
 
 ;--- IPL ROM checksum --------------------------------------------------------
@@ -567,6 +580,8 @@ test_romsum:
                 addq.l  #4,a0
                 dbra    d1,.loop
 .done:
+                move.l  d0,w_sum                ; shown in brackets either way
+                move.w  #1,w_sumshow
                 sub.l   romsum_ref,d0
                 movem.l (sp)+,d1/a0-a1
                 rts
@@ -1096,7 +1111,7 @@ rtc_secs:
 
 ; wait_frames: d0 = frames to wait for, out d0 = 0 if the video timing never
 ; moved and the wait was therefore not real time.  Every step is bounded, so a
-; CRTC that is not scanning cannot hang the POST.
+; CRTC that is not scanning cannot hang the run.
 wait_frames:
                 movem.l d1-d2,-(sp)
                 move.l  d0,d1
@@ -1165,7 +1180,7 @@ test_opm:
 ; Not tested.  Its only readable register leaves most bits open, so on real
 ; hardware the read returns bus float -- a healthy PRO gives $FF on one boot and
 ; $C0 on the next.  Proving the chip alive needs a command and an observed state
-; change, which is more than a POST can do between reset and handing over.
+; change, which is more than this ROM can do between reset and handing over.
 
 ;--- uPD72065 FDC ------------------------------------------------------------
 test_fdc:
@@ -1287,7 +1302,7 @@ sprite_init:
 ;=============================================================================
 ; wait_scanning: block until the CRTC is really scanning, or give up trying.
 ; Watches V-DISP on the MFP GPIP go high then low a few times, a frame each.
-; Bounded at every step: a CRTC that never scans must not hang the POST, and
+; Bounded at every step: a CRTC that never scans must not hang the run, and
 ; test_vidtiming reports that case properly a few lines later.
 wait_scanning:
                 movem.l d0-d2,-(sp)
@@ -1421,7 +1436,7 @@ putchar:
                 rts
 
 newline:
-                clr.w   w_col
+                move.w  #LEFT_MARGIN,w_col
                 addq.w  #1,w_row
                 cmp.w   #SCR_ROWS,w_row
                 blt.s   .ok
@@ -1557,6 +1572,7 @@ run_test_common:
 ; runs and whatever it left in d2 would survive instead.
                 move.w  d2,w_fverdict
                 clr.w   w_fdetail
+                clr.w   w_sumshow
                 move.w  #$FFFF,w_progcol
                 move.w  #$FFFF,w_addrcol
                 bsr     line_start
@@ -1639,6 +1655,7 @@ verdict:
                 bsr     serial_str
                 addq.w  #1,w_fail
 .done:
+                bsr     print_sum
                 bsr     newline
                 bsr     serial_crlf
                 tst.w   w_fdetail
@@ -1676,6 +1693,23 @@ verdict:
                 bsr     newline
                 bsr     serial_crlf
                 movem.l (sp)+,d0-d2/a0
+                rts
+
+; print_sum: appends " (xxxxxxxx)" to a verdict when the test set w_sumshow.
+; Used by the two checksum lines, which report a value as well as a verdict.
+print_sum:
+                movem.l d0/d2/a0,-(sp)
+                tst.w   w_sumshow
+                beq.s   .out
+                clr.w   w_sumshow
+                lea     s_lparen,a0
+                bsr     detail_str
+                move.l  w_sum,d0
+                moveq   #8,d2
+                bsr     print_hex
+                lea     s_rparen,a0
+                bsr     detail_str
+.out:           movem.l (sp)+,d0/d2/a0
                 rts
 
 ; print_ramsize: writes the detected size, e.g. 4096K, where a verdict would go.
@@ -1751,7 +1785,7 @@ serial_init:
                 movem.l (sp)+,d0/a0
                 rts
 
-; serial_char: d0 = byte.  Bounded wait, so a dead SCC cannot hang the POST.
+; serial_char: d0 = byte.  Bounded wait, so a dead SCC cannot hang the run.
 serial_char:
                 tst.w   w_serial
                 bne.s   .skip
@@ -1839,13 +1873,13 @@ delay_seconds:
 ; data
 ;=============================================================================
                 even
-s_banner:       dc.b    'SHARP X68000  POST  v0.36',0
+s_banner:       dc.b    'SHARP X68000  TEST-IPL  v0.36',0
 s_ok:           dc.b    'OK',0
 s_fail:         dc.b    'FAIL',0
 s_skip:         dc.b    'SKIP',0
 s_allok:        dc.b    'ALL TESTS PASSED',0
 s_failed:       dc.b    ' TEST(S) FAILED',0
-s_halted:       dc.b    'POST complete -- halted.  Power off to swap ROMs',0
+s_halted:       dc.b    'Testing done! You can shut down the computer.',0
 s_booting:      dc.b    'EXITING',0
 s_kb:           dc.b    'K',0
 s_indent:       dc.b    '  ',0
@@ -1853,6 +1887,8 @@ s_dollar:       dc.b    '$',0
 s_exp:          dc.b    ' exp ',0
 s_got:          dc.b    ' got ',0
 s_stuck:        dc.b    ' stuck bits ',0
+s_lparen:       dc.b    ' (',0
+s_rparen:       dc.b    ')',0
 ; Human68k SRAM signature: full-width X in Shift-JIS, then "68000W"
 s_sramsig:      dc.b    $82,$77,'68000W'
 
@@ -1876,4 +1912,4 @@ n_ppi:          dc.b    'PPI i8255',0
 n_sprram:       dc.b    'Sprite RAM',0
 
                 even
-post_end:
+testipl_end:

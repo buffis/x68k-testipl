@@ -1,5 +1,5 @@
 #!/bin/sh
-# Fetch and build vasm (m68k, Motorola syntax) into post/tools/.
+# Fetch and build vasm (m68k, Motorola syntax) into tools/.
 # build.py picks it up from there automatically, so this is all that is needed
 # to make the project buildable on a fresh machine.
 set -e

@@ -1,4 +1,4 @@
--- Capture what the POST sends to the RS-232C port.
+-- Capture what the TEST-IPL sends to the RS-232C port.
 --
 -- MAME's x68000 driver wires SCC channel B to the mouse and leaves channel A's
 -- TxD unconnected, so the serial line itself cannot be observed.  This taps
@@ -14,7 +14,7 @@ local n, shown = 0, false
 _G.keep = emu.add_machine_frame_notifier(function ()
   n = n + 1
   if shown or n % 11 ~= 0 then return end
-  -- The POST is done when the cursor stops advancing.  Keying this to a fixed
+  -- The run is done when the cursor stops advancing.  Keying this to a fixed
   -- row breaks whenever a test is added or removed.
   -- Column as well as row: a test printing progress marks advances only the
   -- column, and keying on the row alone dumps while it is still running.

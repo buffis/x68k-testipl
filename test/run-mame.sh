@@ -1,5 +1,5 @@
 #!/bin/sh
-# Run the standalone POST ROM under MAME.
+# Run the standalone TEST-IPL ROM under MAME.
 #
 #   ./run-mame.sh                 watch the standalone build in a window
 #   ./run-mame.sh exbios          watch the exbios build boot, in a window
@@ -30,7 +30,7 @@ rm -rf "$ROMDIR/tmp" "$ROMDIR/x68kxvi.zip"
 mkdir -p "$ROMDIR/tmp"
 cp "$STOCK"/cgrom.dat "$STOCK"/iplrom*.dat "$STOCK"/*.bin "$STOCK"/*.ic11 \
    "$STOCK"/*.ic12 "$ROMDIR/tmp/" 2>/dev/null || true
-cp "$BUILD/ipl_post.dat" "$ROMDIR/tmp/iplromco.dat"
+cp "$BUILD/ipl_testipl.dat" "$ROMDIR/tmp/iplromco.dat"
 ( cd "$ROMDIR/tmp" && zip -q -j ../x68kxvi.zip ./* )
 rm -rf "$ROMDIR/tmp"
 
@@ -43,7 +43,7 @@ if [ "${1:-window}" = "exbios" ]; then
   rm -rf "$ROMDIR"; mkdir -p "$ROMDIR/tmp"
   cp "$STOCK"/cgrom.dat "$STOCK"/iplrom*.dat "$STOCK"/*.bin "$STOCK"/*.ic11 \
      "$STOCK"/*.ic12 "$ROMDIR/tmp/" 2>/dev/null || true
-  cp "$BUILD/ipl_post.dat" "$ROMDIR/tmp/iplrom.dat"
+  cp "$BUILD/ipl_testipl.dat" "$ROMDIR/tmp/iplrom.dat"
   ( cd "$ROMDIR/tmp" && zip -q -j ../x68000.zip ./* )
   rm -rf "$ROMDIR/tmp"
   exec mame x68000 -rompath "$ROMDIR" -bios ipl10 -ram "$RAM" \

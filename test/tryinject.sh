@@ -1,11 +1,11 @@
 #!/bin/sh
-# Build and test injected POST images: the POST runs, then hands the machine
-# over to whatever IPL it was injected into.
+# Build and test injected TEST-IPL images: the tests run, then the machine is
+# handed over to whatever IPL the build was injected into.
 #
 #   ./tryinject.sh
 #
 # Checks, for each IPL: that the payload lands in unprogrammed space, that the
-# POST runs, and that the machine then reaches the IPL on its own with nothing
+# tests run, and that the machine then reaches the IPL on its own with nothing
 # pressed.
 set -e
 cd "$(dirname "$0")"
@@ -16,7 +16,7 @@ cd "$(dirname "$0")"
 export SDL_VIDEODRIVER=dummy
 STOCK=../../x68kxvi
 
-# Image paths are relative to post/, because build.py is run from there.
+# Image paths are relative to the repo root, where build.py is run.
 for spec in "exbios:exbios/exbios_v1.34.24_220429.rom:x68000:ipl10:iplrom.dat" \
             "stock-ace:../x68kxvi/iplrom.dat:x68000:ipl10:iplrom.dat"; do
   name=$(echo $spec | cut -d: -f1);  img=$(echo $spec | cut -d: -f2)
@@ -32,7 +32,7 @@ for spec in "exbios:exbios/exbios_v1.34.24_220429.rom:x68000:ipl10:iplrom.dat" \
   cp $STOCK/cgrom.dat $STOCK/iplrom*.dat $STOCK/*.bin $STOCK/*.ic11 $STOCK/*.ic12 $d/tmp/ 2>/dev/null
   # Boot the stock ROM once first so SRAM is initialised.  MAME starts with
   # blank NVRAM, which the signature test correctly reads as a flat backup
-  # battery, and the POST never writes SRAM itself.  Without this the first
+  # battery, and the TEST-IPL never writes SRAM itself.  Without this the first
   # spec in the loop reports a spurious SRAM signature FAIL while later ones
   # pass, purely because an earlier iteration happened to warm the machine.
   rm -rf ${d}_stock; mkdir -p ${d}_stock
@@ -42,7 +42,7 @@ for spec in "exbios:exbios/exbios_v1.34.24_220429.rom:x68000:ipl10:iplrom.dat" \
   mame $mach -rompath ./${d}_stock -bios $bios -ram 4m -video none -sound none \
     -window -nomaximize -nothrottle -seconds_to_run 14 >/dev/null 2>&1 || true
 
-  cp $bdir/ipl_post.dat $d/tmp/$iplname
+  cp $bdir/ipl_testipl.dat $d/tmp/$iplname
   ( cd $d/tmp && zip -q -j ../$mach.zip ./* )
   rm -rf $d/tmp
 
@@ -56,16 +56,16 @@ for spec in "exbios:exbios/exbios_v1.34.24_220429.rom:x68000:ipl10:iplrom.dat" \
   # The report is transient -- the IPL clears the screen on its way to booting --
   # so capture it from the serial tap, which dumps at machine stop rather than
   # waiting for the cursor to settle.
-  printf '  POST runs             '
+  printf '  TEST-IPL runs         '
   run serialstop.lua 60 | grep -E 'PASSED|TEST\(S\) FAILED' | tr '\n' ' '; echo
   printf '  boots through         '
   run bootthru.lua 90 | grep -E 'BOOTED THROUGH' | tr '\n' ' '; echo
 
   # Reaching the IPL is not the same as the IPL booting properly.  Compare the
-  # booted screen against the same IPL with no POST in it: if the POST leaves
-  # the machine in a state the IPL does not fully recover from, this is what
+  # booted screen against the same IPL with nothing injected: if the TEST-IPL
+  # leaves the machine in a state the IPL does not recover from, this is what
   # catches it.  Both runs are sampled the same interval after the IPL starts,
-  # since the injected one spends ~14 s in the POST first.
+  # since the injected one spends ~14 s in the TEST-IPL first.
   b=roms_base_$name
   rm -rf $b; mkdir -p $b/tmp
   cp $STOCK/cgrom.dat $STOCK/iplrom*.dat $STOCK/*.bin $STOCK/*.ic11 $STOCK/*.ic12 $b/tmp/ 2>/dev/null
@@ -81,7 +81,7 @@ for spec in "exbios:exbios/exbios_v1.34.24_220429.rom:x68000:ipl10:iplrom.dat" \
   if [ -n "$base" ] && [ "$base" = "$with" ]; then
     echo "identical: $with"
   else
-    echo "*** DIFFERS: without POST [$base]  with POST [$with]"
+    echo "*** DIFFERS: without TEST-IPL [$base]  with TEST-IPL [$with]"
   fi
   echo
 done

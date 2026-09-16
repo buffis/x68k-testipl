@@ -1,5 +1,5 @@
 #!/bin/sh
-# Full regression for the standalone POST ROM under MAME.
+# Full regression for the standalone TEST-IPL ROM under MAME.
 #
 #   ./regress.sh
 #
@@ -37,7 +37,7 @@ run () {  # run <romdir> <ram-slot> <script> <seconds>
     | grep -viE 'wrong|expected:|found:|warning|iplromco|average'
 }
 
-mkrom roms "$BUILD/ipl_post.dat"
+mkrom roms "$BUILD/ipl_testipl.dat"
 mkrom roms_stock
 
 # Boot the stock ROM once so SRAM is initialised.  Our ROM never writes it --
@@ -60,26 +60,31 @@ done
 echo
 echo "=== injected faults must be detected ==="
 
-# CGROM is reported as a value now, not judged, so the check is that the
-# reported checksum actually tracks the contents.
-base_cg=$(run roms 2m screen.lua 20 | grep 'CGROM checksum' | awk '{print $NF}')
-mkrom roms_cg "$BUILD/ipl_post.dat"
+# CGROM is judged against CGROM_SUM now, and the value is printed in brackets
+# either way.  Check both halves: the stock dump passes, and one flipped bit
+# both fails and reports a different value.
+cgline () { sed -n 's/^ *CGROM checksum\.*  *//p'; }
+base_cg=$(run roms 2m screen.lua 20 | cgline)
+mkrom roms_cg "$BUILD/ipl_testipl.dat"
 ( cd roms_cg && mkdir t && cd t && unzip -q ../x68kxvi.zip \
   && python3 -c "
 import pathlib
 p=pathlib.Path('cgrom.dat'); d=bytearray(p.read_bytes()); d[0x54321]^=1; p.write_bytes(d)" \
   && zip -q -j ../x68kxvi.zip ./* && cd .. && rm -rf t )
-flip_cg=$(mame x68kxvi -rompath roms_cg -bios ipl12 -ram 2m -video none -sound none \
-  -window -nomaximize -nothrottle -seconds_to_run 20 -autoboot_script screen.lua \
-  -autoboot_delay 0 2>&1 | grep 'CGROM checksum' | awk '{print $NF}')
+flip_cg=$(run roms_cg 2m screen.lua 20 | cgline)
+printf '  CGROM stock dump      '
+case "$base_cg" in
+  OK*) echo "$base_cg" ;;
+  *)   echo "*** FAILED: got [$base_cg], expected OK" ;;
+esac
 printf '  CGROM 1 bit flipped   '
-if [ -n "$base_cg" ] && [ -n "$flip_cg" ] && [ "$base_cg" != "$flip_cg" ]; then
-  echo "checksum tracked the change: $base_cg -> $flip_cg"
-else
-  echo "*** FAILED: $base_cg -> $flip_cg (expected them to differ)"
-fi
+case "$flip_cg" in
+  FAIL*) if [ "$flip_cg" != "$base_cg" ]; then echo "detected: $flip_cg"
+         else echo "*** FAILED: same value as the good dump"; fi ;;
+  *)     echo "*** FAILED: got [$flip_cg], expected FAIL" ;;
+esac
 
-cp "$BUILD/ipl_post.dat" /tmp/ipl_bad.dat
+cp "$BUILD/ipl_testipl.dat" /tmp/ipl_bad.dat
 python3 -c "
 import pathlib
 p=pathlib.Path('/tmp/ipl_bad.dat'); d=bytearray(p.read_bytes()); d[0x18000]^=1; p.write_bytes(d)"
@@ -114,9 +119,9 @@ echo "=== an optional test that faults reports SKIP, not FAIL ==="
 # odd address so the test is guaranteed to fault, and check the verdict.
 sed -e 's/^SPRRAM          equ     \$EB8000/SPRRAM          equ     $EB8001/' \
     -e 's/^SPRRAM_END      equ     \$EC0000/SPRRAM_END      equ     $EC0001/' \
-    ../x68post.s > /tmp/sprfault.s
+    ../x68testipl.s > /tmp/sprfault.s
 ( cd .. && python3 build.py --src /tmp/sprfault.s --out test/build_sprfault ) >/dev/null
-mkrom roms_sprfault build_sprfault/ipl_post.dat
+mkrom roms_sprfault build_sprfault/ipl_testipl.dat
 printf '  faulting sprite test  '
 run roms_sprfault 2m screen.lua 60 | grep -E 'Sprite RAM' | tr -s ' ' | tr '\n' ' '; echo
 rm -rf roms_sprfault build_sprfault /tmp/sprfault.s

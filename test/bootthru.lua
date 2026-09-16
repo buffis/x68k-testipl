@@ -1,5 +1,5 @@
 -- An injected build must reach the IPL on its own, with no key pressed.
--- Watches for the PC to leave the POST payload and settle in the IPL.
+-- Watches for the PC to leave the TEST-IPL payload and settle in the IPL.
 local mem = manager.machine.devices[":maincpu"].spaces["program"]
 local cpu = manager.machine.devices[":maincpu"]
 local frame, done, peak = 0, false, 0

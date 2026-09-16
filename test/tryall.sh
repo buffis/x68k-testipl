@@ -1,9 +1,9 @@
 #!/bin/sh
-# Run the standalone POST on every model MAME emulates.
+# Run the standalone TEST-IPL on every model MAME emulates.
 #
-# There is one ROM image for all of them: the POST owns the machine from reset
-# and boots nothing, so there is no stock IPL to fit around and nothing that
-# varies by model.  MAME just wants the image under the filename each machine's
+# There is one ROM image for all of them: it owns the machine from reset and
+# boots nothing, so there is no stock IPL to fit around and nothing that varies
+# by model.  MAME just wants the image under the filename each machine's
 # BIOS expects.
 cd "$(dirname "$0")"
 
@@ -12,7 +12,7 @@ cd "$(dirname "$0")"
 # takes focus.  SDL's dummy video driver stops it reaching the display at all.
 export SDL_VIDEODRIVER=dummy
 STOCK=../../x68kxvi
-ROM=${ROM:-../build/ipl_post.dat}
+ROM=${ROM:-../build/ipl_testipl.dat}
 
 for spec in "xvi:x68kxvi:ipl11:iplromxv.dat" \
             "ace:x68000:ipl10:iplrom.dat" \
