@@ -10,9 +10,8 @@ Two build modes:
   machine. Contains no Sharp code and needs no ROM dumps to build.
 - **injected** (`--ipl FILE`) — rides along in the unprogrammed space of an
   existing 128 KB IPL, holds the report on screen (3 s, or 10 s if anything
-  failed) and then hands over, so the machine boots as normal. Needs an image
-  with a large unprogrammed run: exbios and the X68030 IPL qualify, the stock
-  ACE/XVI/Compact IPLs no longer do.
+  failed) and then hands over, so the machine boots as normal. Stock Sharp,
+  exbios, anything else.
 
 **No Sharp ROM content is redistributed here.** The source, the build and the
 prebuilt images in `bin/` are entirely original. An injected build or the MAME
@@ -91,11 +90,15 @@ python3 build.py --ipl path/to/ipl.rom --out build-injected
 
 `docs/TOOLCHAIN.md` covers the toolchain and its two sharp edges.
 
-`--ipl` takes a 128 KB IPL image. It finds the largest unprogrammed run, builds
-TEST-IPL to sit there, repoints the reset vector and records the IPL's own entry
-point to chain to; it refuses to inject over anything that is not fill, and
-refuses outright when the run is too small to be worth it. `--base ADDR`
-overrides the placement.
+`--ipl` takes any 128 KB IPL image. It finds the largest unprogrammed run,
+builds TEST-IPL to sit there, repoints the reset vector and records the IPL's
+own entry point to chain to; it refuses to inject over anything that is not
+fill, and refuses when the payload will not fit. `--base ADDR` overrides the
+placement.
+
+The stock Sharp IPLs have little slack — ACE has 6668 bytes free against a
+~6.2 KB payload — so the build prints the margin and warns when it drops below
+1 KB. exbios (65536) and the X68030 IPL (49612) have room to spare.
 
 Given an image split into halves, interleave them first — even is D15-D8, odd
 is D7-D0:

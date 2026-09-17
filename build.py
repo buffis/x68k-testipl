@@ -9,8 +9,9 @@ Build the X68000 TEST-IPL ROM.
   injected (--ipl FILE)
       Puts TEST-IPL into the unprogrammed space of an existing 128K IPL image,
       repoints the reset vector at it, and hands over to that IPL's original
-      entry point when the tests are done.  Needs a large unprogrammed run:
-      exbios and the X68030 IPL have one, the stock ACE/XVI/Compact IPLs do not.
+      entry point when the tests are done.  Any 128K IPL with a large enough
+      unprogrammed run works; the build refuses one the payload will not fit
+      and warns when the margin is tight.
 
 Either way it fills in the ROM self-check checksum and emits the 128K image
 plus the even/odd halves for a pair of 27C512-class EPROMs.
@@ -37,15 +38,16 @@ STACK_TOP = 0xE7FF00       # initial SSP; TEST-IPL re-derives its own anyway
 FILL = 0xFF                # unprogrammed EPROM
 ROMSUM_OFF = 4             # checksum field within the payload (see crt0.s)
 
-# Minimum unprogrammed run an injected build will accept.
-#
-# This is a headroom policy, not a hard limit.  The C payload is ~6.2K, so it
-# would physically fit stock ACE (6668 free) with about 400 bytes to spare and
-# XVI/Compact (8.1-8.4K) with rather more -- but a single extra test would blow
-# it, silently, on whichever machine someone happened not to retest.  exbios
-# (65536) and the X68030 IPL (49612) have real room.  Lower this if you want the
-# stock IPLs back and are willing to watch the size on every change.
-MIN_FREE = 16384
+# A run smaller than this cannot hold any plausible payload, so reject it early
+# with a clear message rather than after a pointless compile.  The real check is
+# against the actual payload size after linking.
+MIN_FREE = 2048
+
+# Warn when an injected build fits with less than this to spare.  The stock
+# Sharp IPLs have only 6.6-8.4K free, so a payload that grows by a page could
+# overflow one of them -- and it would do so on whichever image nobody happened
+# to rebuild.
+TIGHT_FIT = 1024
 
 # crt0.s must link first: build.py patches the header blind, so the payload has
 # to open with the bra.w and the checksum longword.
@@ -270,16 +272,8 @@ def main():
             free_len = free_end - testipl_base
             if free_len < MIN_FREE:
                 sys.exit(
-                    "%s: largest unprogrammed run is %d bytes at $%06X, too "
-                    "small for TEST-IPL.\n"
-                    "Since the move to C the payload no longer fits a stock "
-                    "Sharp IPL.  Free space by image:\n"
-                    "    exbios    65536 bytes   supported\n"
-                    "    X68030    49612 bytes   supported\n"
-                    "    ACE        6668 bytes   too small\n"
-                    "    XVI        8404 bytes   too small\n"
-                    "    Compact    8120 bytes   too small\n"
-                    "Inject into exbios or an X68030 IPL, or build standalone."
+                    "%s: largest unprogrammed run is only %d bytes at $%06X -- "
+                    "nothing would fit there.\nIs this really a 128K IPL image?"
                     % (args.ipl, free_len, testipl_base))
         if testipl_base % 4:
             sys.exit("injection address $%06X is not longword aligned" % testipl_base)
@@ -316,8 +310,11 @@ def main():
         sys.exit("payload is %d bytes and does not fit: $%06X+%d runs past $%06X"
                  % (len(payload), testipl_base, len(payload), IPL_BASE + IPL_LEN - 1))
     if ipl is not None and testipl_base + len(payload) > free_end:
-        sys.exit("payload is %d bytes but only %d are free at $%06X in %s"
-                 % (len(payload), free_end - testipl_base, testipl_base, args.ipl))
+        sys.exit("%s: the payload is %d bytes but only %d are free at $%06X.\n"
+                 "The stock Sharp IPLs have little slack (ACE 6668, Compact 8120,\n"
+                 "XVI 8404); exbios (65536) and the X68030 IPL (49612) have room,\n"
+                 "and the standalone build has the whole 128K."
+                 % (args.ipl, len(payload), free_end - testipl_base, testipl_base))
 
     if ipl is None:
         rom = bytearray([FILL]) * IPL_LEN
@@ -359,10 +356,16 @@ def main():
         print("reset SSP         $%08X" % STACK_TOP)
     else:
         print("TEST-IPL injected into %s" % args.ipl)
-        print("TEST-IPL payload  %6d bytes  $%06X-$%06X  (%d bytes free)"
+        print("TEST-IPL payload  %6d bytes  $%06X-$%06X  (%d free, %d spare)"
               % (len(payload), testipl_base, IPL_BASE + end - 1,
-                 free_end - testipl_base))
+                 free_end - testipl_base,
+                 free_end - testipl_base - len(payload)))
         print("chains to         $%08X  (the IPL's own reset PC)" % chain_to)
+        spare = free_end - testipl_base - len(payload)
+        if spare < TIGHT_FIT:
+            print("\nWARNING: only %d bytes spare in this image.  Adding a test\n"
+                  "         could overflow it -- rebuild and check after changes."
+                  % spare)
     print("reset PC          $%08X" % testipl_base)
     print("ROM checksum      $%08X" % rom_sum)
     print()

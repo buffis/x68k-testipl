@@ -11,10 +11,11 @@ export SDL_VIDEODRIVER=dummy
 STOCK=../../x68kxvi
 
 # Image paths are relative to the repo root, where build.py is run.
-# Only images with a large unprogrammed run can host the payload.  The stock
-# ACE/XVI/Compact IPLs have 6-8K free and no longer fit it; build.py refuses
-# them with an explanation.
+# stock-ace is the tightest fit of any image we inject into -- a few hundred
+# bytes spare -- so it is the one that catches the payload outgrowing a stock
+# Sharp IPL.  x68030 covers the 32-bit bus.
 for spec in "exbios:exbios/exbios_v1.34.24_220429.rom:x68000:ipl10:iplrom.dat" \
+            "stock-ace:../x68kxvi/iplrom.dat:x68000:ipl10:iplrom.dat" \
             "x68030:../x68kxvi/iplrom30.dat:x68030:ipl13:iplrom30.dat"; do
   name=$(echo $spec | cut -d: -f1);  img=$(echo $spec | cut -d: -f2)
   mach=$(echo $spec | cut -d: -f3); bios=$(echo $spec | cut -d: -f4)
@@ -22,7 +23,7 @@ for spec in "exbios:exbios/exbios_v1.34.24_220429.rom:x68000:ipl10:iplrom.dat" \
   bdir=build_inj_$name
 
   echo "########## $name ##########"
-  ( cd .. && python3 build.py --ipl "$img" --out "test/$bdir" ) | grep -E 'payload|chains to'
+  ( cd .. && python3 build.py --ipl "$img" --out "test/$bdir" ) | grep -E 'payload|chains to|WARNING|spare'
 
   d=roms_inj_$name
   rm -rf $d; mkdir -p $d/tmp
