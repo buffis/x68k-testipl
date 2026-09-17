@@ -39,6 +39,20 @@ if [ "${1:-window}" = "exbios" ]; then
   # MAME wants it called iplrom.dat on the x68000 machine, not the Compact's
   # x68kxvi/ipl12 that every other mode here uses.
   BUILD=${BUILD_SET:-../build-exbios}
+  # Build the injected image unless the caller pointed BUILD somewhere else.
+  # Nothing else produces it, so without this the cp below fails on a stale or
+  # missing directory.
+  if [ -z "$BUILD_SET" ]; then
+    IMG=$(ls ../exbios/*.rom 2>/dev/null | head -1)
+    if [ -z "$IMG" ]; then
+      echo "$0: no IPL image in exbios/ to inject into." >&2
+      echo "  exbios/ holds third-party ROMs and is gitignored -- supply your own," >&2
+      echo "  or point BUILD at a directory holding an injected testipl.dat." >&2
+      exit 2
+    fi
+    ( cd .. && python3 build.py --ipl "${IMG#../}" --out build-exbios ) >/dev/null \
+      || { echo "$0: injected build failed" >&2; exit 1; }
+  fi
   ROMDIR=./roms_exbios_win
   rm -rf "$ROMDIR"; mkdir -p "$ROMDIR/tmp"
   cp "$STOCK"/cgrom.dat "$STOCK"/iplrom*.dat "$STOCK"/*.bin "$STOCK"/*.ic11 \
