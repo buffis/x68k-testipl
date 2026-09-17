@@ -134,13 +134,21 @@ def preflight(srcdir):
             # read AND the branch, so the body runs unconditionally.  Adding any
             # operator ("v != 0", "v & MASK") makes it emit correct code.  This
             # is silent, so the build refuses the shapes that trigger it.
-            if re.search(r"\b(if|while)\s*\(\s*!?\s*(w_[a-z_]+|MMIO\d+\s*\([^()]*\)"
-                         r"|[A-Z][A-Z0-9_]*\s*\([^()]*\))\s*\)", code):
-                bad.append("%s:%d: bare volatile as a condition -- vbcc drops "
-                           "the read; write \"!= 0\": %s" % (c.name, n, line.strip()))
-            if re.search(r"\b(w_[a-z_]+|MMIO\d+\s*\([^()]*\))\s*\?", code):
-                bad.append("%s:%d: bare volatile in a ternary -- vbcc drops the "
-                           "read; write \"!= 0\": %s" % (c.name, n, line.strip()))
+            vol = r"(w_[a-z_]+|MMIO\d+\s*\([^()]*\)|[A-Z][A-Z0-9_]*\s*\([^()]*\))"
+            hit = (
+                # if (V) / if (!V) / while (V)
+                re.search(r"\b(if|while)\s*\(\s*!?\s*" + vol + r"\s*\)", code)
+                # V ? a : b
+                or re.search(vol + r"\s*\?", code)
+                # V && x   /   V || x   /   x && V   /   x || V
+                or re.search(vol + r"\s*(&&|\|\|)", code)
+                or re.search(r"(&&|\|\|)\s*!?\s*" + vol + r"\s*[)&|]", code)
+                # for (...; V; ...)
+                or re.search(r"\bfor\s*\([^;]*;\s*!?\s*" + vol + r"\s*;", code))
+            if hit:
+                bad.append("%s:%d: bare volatile in a truth context -- vbcc "
+                           "drops the read; add a comparison (\"!= 0\"): %s"
+                           % (c.name, n, line.strip()))
     if bad:
         sys.exit("preflight failed:\n  " + "\n  ".join(bad))
 

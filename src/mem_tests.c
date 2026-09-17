@@ -9,7 +9,10 @@ extern const u32 romsum_ref;    /* in crt0.s, at payload offset +4 */
 static const u8 s_sramsig[8] = { 0x82, 0x77, '6', '8', '0', '0', '0', 'W' };
 
 /*--- text VRAM -------------------------------------------------------------*/
-/* Runs before video init, so all four planes are free to use. */
+/* Runs after video_init but before anything is printed, so all four planes
+   are free to use.  The verdict is held in w_tvram and reported later, in
+   memory order -- the display has to be trusted before the report means
+   anything. */
 int test_tvram(void)
 {
     u32 n = (TVRAM_RESV - TVRAM) / 4;
@@ -173,7 +176,10 @@ int test_ramsize(void)
     volatile u32 top;
     jmp_buf jb;
     u32 outer = w_jbp;
-    u32 a, tag, lo, hi, bits;
+    volatile u32 bits;      /* written inside a guarded block and
+                               read after it -- must not live in a
+                               register longjmp would restore */
+    u32 a, tag, lo, hi;
 
     /* The first kilobyte must work before exception vectors can be installed.
        No guard of our own here: a fault lands on run_test's FAIL path. */
